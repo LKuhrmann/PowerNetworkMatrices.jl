@@ -114,22 +114,19 @@ function _klu_stress_task(
 end
 
 @testset "Distinct caches in parallel" begin
-    if Threads.nthreads() == 1
-        @test_skip false
-    else
-        bases = [_convection_diffusion(50)]
-        niter = 40
-        if _KLU_STRESS_FULL
-            sys = build_system(MatpowerTestSystems, "matpower_ACTIVSg10k_sys")
-            bases = [_convection_diffusion(100), PNM.ABA_Matrix(sys).data]
-            niter = 100
-        end
-        ntasks = 2 * Threads.nthreads()
-        base_of(t) = bases[1 + t % length(bases)]
-        serial = [_klu_stress_task(t, base_of(t), niter) for t in 1:ntasks]
-        tasks = [Threads.@spawn _klu_stress_task(t, base_of(t), niter) for t in 1:ntasks]
-        @test fetch.(tasks) == serial
+    @test Threads.nthreads() >= 2
+    bases = [_convection_diffusion(50)]
+    niter = 40
+    if _KLU_STRESS_FULL
+        sys = build_system(MatpowerTestSystems, "matpower_ACTIVSg10k_sys")
+        bases = [_convection_diffusion(100), PNM.ABA_Matrix(sys).data]
+        niter = 100
     end
+    ntasks = 2 * Threads.nthreads()
+    base_of(t) = bases[1 + t % length(bases)]
+    serial = [_klu_stress_task(t, base_of(t), niter) for t in 1:ntasks]
+    tasks = [Threads.@spawn _klu_stress_task(t, base_of(t), niter) for t in 1:ntasks]
+    @test fetch.(tasks) == serial
 end
 
 function _run_subprocess(script::String; threads::Int = 1, timeout::Real = 300)

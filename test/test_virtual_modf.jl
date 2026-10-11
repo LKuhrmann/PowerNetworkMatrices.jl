@@ -389,12 +389,8 @@ end
     # test confirms the result is still correct under that serialization,
     # including the double-checked-insert path on `woodbury_cache` /
     # `row_caches` when two threads race on a first-time query.
-    # Skipped under JULIA_NUM_THREADS=1 because @threads :dynamic degenerates
-    # to serial there and the test reduces to a tautology.
-    if Threads.nthreads() < 2
-        @info "Skipping: requires Threads.nthreads() ≥ 2 to exercise concurrent getindex."
-        return
-    end
+    # The worker threads come from `WORKER_EXEFLAGS` in runtests.jl.
+    @test Threads.nthreads() >= 2
 
     sys, _ = _build_c_sys14_with_outages()
     vmodf = PowerNetworkMatrices.VirtualMODF(sys)
@@ -467,10 +463,7 @@ end
     # once in the work list, so only the `woodbury_cache` first-call race is
     # exercised. Here, many tasks race on the SAME (arc, ctg), which
     # exercises the row-cache population path serialized by `solver_lock`.
-    if Threads.nthreads() < 2
-        @info "Skipping: requires Threads.nthreads() ≥ 2 to exercise concurrent getindex."
-        return
-    end
+    @test Threads.nthreads() >= 2
 
     sys, _ = _build_c_sys14_with_outages()
     vmodf = PowerNetworkMatrices.VirtualMODF(sys)

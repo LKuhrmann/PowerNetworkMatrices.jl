@@ -351,10 +351,7 @@ end
         @info "Skipping: AppleAccelerate backend not available on this platform."
         return
     end
-    if Threads.nthreads() < 2
-        @info "Skipping: requires Threads.nthreads() ≥ 2 to exercise concurrent access."
-        return
-    end
+    @test Threads.nthreads() >= 2
 
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14")
     vptdf = VirtualPTDF(sys; linear_solver = "AppleAccelerate")
