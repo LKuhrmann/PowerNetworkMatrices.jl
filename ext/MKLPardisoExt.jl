@@ -182,4 +182,17 @@ function PNM.solve!(cache::PNM.PardisoLinSolveCache{T}, B::StridedMatrix{T}) whe
     return B
 end
 
+# `SOLVE_ITERATIVE_REFINE` refines in the solve phase, so `A`, `tol` and `max_iters` are unused.
+function PNM.solve_w_refinement(
+    cache::PNM.PardisoLinSolveCache{T},
+    ::SparseMatrixCSC{T},
+    b::StridedVecOrMat{T};
+    tol::Real = 0.0,
+    max_iters::Int = 0,
+) where {T}
+    x = copy(b)
+    PNM.solve!(cache, x)
+    return x
+end
+
 end # module

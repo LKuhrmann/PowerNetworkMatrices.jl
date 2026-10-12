@@ -592,3 +592,57 @@ end
     output = read(ignorestatus(cmd), String)
     @test occursin("nthreads=4 same=true hash=true", output)
 end
+
+@testset "KLULinSolveCache swap_lean_columns! is idempotent" begin
+    pv = [0.0 10.0 1.0 -10.0; -1.0 2.0 -3.0 1.0; 0.0 -10.0 2.0 12.0; 0.0 -2.0 9.0 -1.0]
+    ref = copy(pv)
+    ref[:, 1] = [-1.0, 0.0, 0.0, 0.0]
+    ref[:, 2] = [0.0, -1.0, 0.0, 0.0]
+    A0 = _dense_pattern(pv)
+    A1 = _dense_pattern(ref)
+    plan = KW.build_lean_plan(A0)
+    cache = PNM.KLULinSolveCache(A0)
+    KW.set_lean_plan!(cache, plan)
+    PNM.symbolic_factor!(cache, A0)
+    pairs(on) = ((2i - 1, 2i) for i in 1:2 if on[i])
+    swap!(on) = KW.swap_lean_columns!(cache, plan, pairs(on))
+
+    # No swaps over the plan's own order: factors stay.
+    PNM.numeric_refactor!(cache, A0)
+    @test cache.lean_active
+    swap!((false, false))
+    @test cache.lean_active && cache.lean_plan === plan
+
+    swap!((true, false))
+    q1 = copy(cache.lean_plan.q)
+    @test q1 != plan.q && !cache.lean_active
+    PNM.numeric_refactor!(cache, A1)
+    @test cache.lean_active
+    # The same pairs keep the order, the plan object and the numeric factors.
+    held = cache.lean_plan
+    swap!((true, false))
+    @test cache.lean_plan === held && cache.lean_active
+    @test PNM.solve!(cache, [1.0, 2.0, 3.0, 4.0]) ≈ Matrix(A1) \ [1.0, 2.0, 3.0, 4.0]
+    # A repeated call allocates nothing.
+    on = (true, false)
+    swap!(on)
+    @test iszero(@allocated swap!(on))
+
+    # A changed pair set swaps again.
+    swap!((false, true))
+    @test cache.lean_plan !== held && !cache.lean_active
+    @test cache.lean_plan.q != q1
+    swap!((false, false))
+    @test cache.lean_plan === plan
+
+    # A pair whose columns differ in pattern is skipped, so the order stays the plan's.
+    sparse_pv = SparseArrays.sparse(pv)
+    other = PNM.KLULinSolveCache(sparse_pv)
+    p2 = KW.build_lean_plan(sparse_pv)
+    KW.set_lean_plan!(other, p2)
+    PNM.symbolic_factor!(other, sparse_pv)
+    PNM.numeric_refactor!(other, sparse_pv)
+    @test other.lean_active
+    KW.swap_lean_columns!(other, p2, ((1, 2),))
+    @test other.lean_plan.q == p2.q && other.lean_active
+end
