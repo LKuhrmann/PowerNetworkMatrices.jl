@@ -155,6 +155,8 @@ auto-applied during `Ybus` construction.
         sparse on large systems.
 - `max_cache_size::Int`: Max cache size in MiB per contingency (default: MAX_CACHE_SIZE_MiB)
 - `network_reductions::Vector{NetworkReduction}`: Network reductions to apply
+- `irreducible_buses`: Buses that the network reductions must keep. Give a collection of bus
+        numbers or an `IS.ComponentSelector` (see [`get_irreducible_bus_numbers`](@ref)).
 - `automatically_register_outages::Bool`: Register all system Outage attributes (default: true)
 """
 function VirtualMODF(
@@ -167,8 +169,8 @@ function VirtualMODF(
     automatically_register_outages::Bool = true,
     kwargs...,
 )
-    # Accept any iterable of bus numbers and normalize once, matching `Ybus`.
-    irreducible_buses = Set{Int}(irreducible_buses)
+    # Accept bus numbers or a `ComponentSelector` and normalize once, matching `Ybus`.
+    irreducible_buses = _irreducible_bus_set(sys, irreducible_buses)
     resolve_linear_solver(linear_solver)
 
     # Split so the zero-impedance entry reaches `Ybus` (which applies it first) instead of

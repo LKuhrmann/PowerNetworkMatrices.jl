@@ -697,6 +697,7 @@ end
         sys::PSY.System;
         make_arc_admittance_matrices::Bool = false,
         network_reductions::Vector{NetworkReduction} = NetworkReduction[],
+        irreducible_buses = Set{Int}(),
         include_constant_impedance_loads::Bool = true,
         kwargs...
     ) -> Ybus
@@ -714,6 +715,9 @@ and network reductions while maintaining connectivity analysis.
 - `make_arc_admittance_matrices::Bool=false`: Whether to construct arc admittance matrices for power flow
 - `network_reductions::Vector{NetworkReduction}=[]`: Network reduction algorithms to apply
 - `include_constant_impedance_loads::Bool=true`: Whether to include constant impedance loads as shunt admittances
+- `irreducible_buses=Set{Int}()`: Buses that the network reductions must keep. Give a collection of
+  bus numbers or an `IS.ComponentSelector`. See [`get_irreducible_bus_numbers`](@ref) for the
+  buses that each selected component type keeps.
 
 # Returns
 - `Ybus`: Constructed Y-bus matrix with network topology and electrical parameters
@@ -768,7 +772,7 @@ function Ybus(
 )
     network_reductions, zero_impedance_reduction =
         _split_zero_impedance_reduction(network_reductions)
-    user_irreducible = Set{Int}(irreducible_buses)
+    user_irreducible = _irreducible_bus_set(sys, irreducible_buses)
     ref_bus_numbers = Set{Int}()
     # Stored angles of the swing (REF) buses, used to pick the smallest-angle swing as the
     # representative when an island holds more than one (see `assign_reference_buses!`).

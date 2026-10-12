@@ -54,11 +54,12 @@ The `DegreeTwoReduction` provides several configuration options:
 You can protect certain buses from reduction even if they have degree two:
 
 ```@repl tutorial_DegreeTwoReduction
-# Create degree-two reduction that protects specific buses
-reduction = DegreeTwoReduction(; irreducible_buses = [115]);
-
-# Apply to system (if these buses exist in the system)
-ybus_protected = Ybus(sys; network_reductions = NetworkReduction[reduction]);
+# Protect bus 115 from the degree-two reduction
+ybus_protected = Ybus(
+    sys;
+    network_reductions = NetworkReduction[DegreeTwoReduction()],
+    irreducible_buses = [115],
+);
 reduction_data_protected = get_network_reduction_data(ybus_protected);
 # Compare with unprotected case: 
 PNM.get_removed_buses(reduction_data)

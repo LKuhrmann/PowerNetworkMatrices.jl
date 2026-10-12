@@ -1,24 +1,10 @@
 # Outage-protection set for VirtualMODF: buses whose loss would make an
 # outaged/monitored component non-queryable in the reduced network.
 
-# Add a monitored component's bus(es). Branches contribute both arc endpoints;
-# unsupported component types warn and are skipped.
-function _accumulate_protected_buses!(buses::Set{Int}, branch::PSY.ACTransmission)
-    _add_arc_buses!(buses, branch)
-    return
-end
-
-function _accumulate_protected_buses!(buses::Set{Int}, bus::PSY.ACBus)
-    PSY.get_available(bus) && push!(buses, PSY.get_number(bus))
-    return
-end
-
-function _accumulate_protected_buses!(buses::Set{Int}, c::PSY.StaticInjection)
-    PSY.get_available(c) || return
-    bus = PSY.get_bus(c)
-    PSY.get_available(bus) && push!(buses, PSY.get_number(bus))
-    return
-end
+# Add the buses of an outaged or monitored component. The bus rules are the
+# `irreducible_buses` selector rules; a component type without a rule warns and is skipped.
+_accumulate_protected_buses!(buses::Set{Int}, c::_IrreducibleBusRuleComponent) =
+    _add_component_buses!(buses, c)
 
 function _accumulate_protected_buses!(::Set{Int}, c::PSY.Component)
     @warn "Outage-monitored component $(typeof(c)) ($(PSY.get_name(c))) has no " *
