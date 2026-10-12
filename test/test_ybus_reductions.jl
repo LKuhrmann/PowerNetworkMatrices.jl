@@ -211,7 +211,7 @@ end
     ybus = Ybus(
         sys;
         network_reductions = NetworkReduction[RadialReduction()],
-        irreducible_buses = Set([116]),
+        irreducible_buses = bus_number_selector(Set([116])),
     )
     @test !haskey(get_network_reduction_data(ybus).reverse_bus_search_map, 116)
     @test get_network_reduction_data(ybus).irreducible_buses == Set{Int}(116)
@@ -222,7 +222,7 @@ end
     ybus = Ybus(
         sys;
         network_reductions = NetworkReduction[DegreeTwoReduction()],
-        irreducible_buses = Set([117]),
+        irreducible_buses = bus_number_selector(Set([117])),
     )
     @test 117 ∉ get_network_reduction_data(ybus).removed_buses
     @test get_network_reduction_data(ybus).irreducible_buses ==
@@ -457,7 +457,7 @@ end
     min_x_eps = 1e-3
     ybus = Ybus(
         sys;
-        irreducible_buses = [1, 3, 4],
+        irreducible_buses = bus_number_selector([1, 3, 4]),
         network_reductions = NetworkReduction[
             ZeroImpedanceBranchReduction(; minimum_retained_impedance = min_x_eps),
             DegreeTwoReduction(),
@@ -559,7 +559,7 @@ end
     ybus_flip = Ybus(
         sys;
         network_reductions = NetworkReduction[RadialReduction()],
-        irreducible_buses = Set([113]),
+        irreducible_buses = bus_number_selector(Set([113])),
     )
     nrd_flip = get_network_reduction_data(ybus_flip)
     @test 113 ∉ keys(nrd_flip.reverse_bus_search_map)   # 113 survived
@@ -571,12 +571,12 @@ end
     @test_logs (:warn, r"irreducible buses (112 and 113|113 and 112)") match_mode = :any Ybus(
         sys;
         network_reductions = NetworkReduction[RadialReduction()],
-        irreducible_buses = Set([112, 113]),
+        irreducible_buses = bus_number_selector(Set([112, 113])),
     )
     ybus_skip = Ybus(
         sys;
         network_reductions = NetworkReduction[RadialReduction()],
-        irreducible_buses = Set([112, 113]),
+        irreducible_buses = bus_number_selector(Set([112, 113])),
     )
     nrd_skip = get_network_reduction_data(ybus_skip)
     @test 112 ∉ keys(nrd_skip.reverse_bus_search_map)   # neither bus removed
@@ -594,7 +594,7 @@ end
         set_r!(line, 0.0u"SU")
         set_x!(line, 0.0u"SU")
     end
-    ybus = Ybus(sys; irreducible_buses = Set([4]))
+    ybus = Ybus(sys; irreducible_buses = bus_number_selector(Set([4])))
     nrd = get_network_reduction_data(ybus)
     @test 4 ∈ PNM.get_bus_axis(ybus)
     @test 4 ∉ keys(nrd.reverse_bus_search_map)
@@ -610,7 +610,7 @@ end
         set_r!(line, 0.0u"SU")
         set_x!(line, 0.0u"SU")
     end
-    ybus2 = Ybus(sys2; irreducible_buses = Set([2, 4]))
+    ybus2 = Ybus(sys2; irreducible_buses = bus_number_selector(Set([2, 4])))
     nrd2 = get_network_reduction_data(ybus2)
     @test 2 ∈ PNM.get_bus_axis(ybus2)
     @test 4 ∈ PNM.get_bus_axis(ybus2)
@@ -630,7 +630,7 @@ end
             set_r!(line, 0.0u"SU")
             set_x!(line, 0.0u"SU")
         end
-        ybus = Ybus(sys; irreducible_buses = pinned)
+        ybus = Ybus(sys; irreducible_buses = bus_number_selector(pinned))
         nrd = get_network_reduction_data(ybus)
         bus_ax = Set(PNM.get_bus_axis(ybus))
         @test Set([(2, 3), (3, 4), (2, 4)]) ⊆ PNM.get_removed_arcs(nrd)
@@ -865,7 +865,7 @@ end
 
     ybus = Ybus(
         sys;
-        irreducible_buses = [1, 4, 5],
+        irreducible_buses = bus_number_selector([1, 4, 5]),
         network_reductions = NetworkReduction[DegreeTwoReduction()],
     )
     nr = get_network_reduction_data(ybus)
@@ -1746,7 +1746,8 @@ end
     @test (4, 7) ∉ arcs
     _test_arc_subnetwork_axis_partitions(ybus)
 
-    ybus = Ybus(_zero_c_sys14_lines(zeroed); irreducible_buses = Set([4]))
+    ybus =
+        Ybus(_zero_c_sys14_lines(zeroed); irreducible_buses = bus_number_selector(Set([4])))
     @test 4 ∈ PNM.get_bus_axis(ybus)
     arcs = reduce(vcat, values(ybus.arc_subnetwork_axis))
     @test (4, 5) ∈ arcs
@@ -1762,7 +1763,10 @@ end
 
     # Line 1-2 merges the reference bus 1 into bus 2, so the island key moves to bus 2.
     @test only(keys(Ybus(_zero_c_sys14_lines(())).subnetwork_axes)) == 1
-    ybus = Ybus(_zero_c_sys14_lines(("Line1",)); irreducible_buses = Set([2]))
+    ybus = Ybus(
+        _zero_c_sys14_lines(("Line1",));
+        irreducible_buses = bus_number_selector(Set([2])),
+    )
     @test 1 ∉ PNM.get_bus_axis(ybus)
     @test only(keys(ybus.subnetwork_axes)) == 2
     arcs = reduce(vcat, values(ybus.arc_subnetwork_axis))

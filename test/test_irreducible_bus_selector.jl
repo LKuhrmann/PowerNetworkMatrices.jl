@@ -72,7 +72,7 @@ end
     )
 end
 
-@testset "Ybus: selector gives the same reduction as bus numbers" begin
+@testset "Ybus: a component selector gives the same reduction as a bus selector" begin
     sys = _irreducible_selector_system()
 
     # Radial reduction removes bus 116 unless the branch to it is selected.
@@ -82,7 +82,11 @@ end
         network_reductions = radial,
         irreducible_buses = make_selector(Line, "BUS 103_103-BUS 116_116-i_1"),
     )
-    from_numbers = Ybus(sys; network_reductions = radial, irreducible_buses = [103, 116])
+    from_numbers = Ybus(
+        sys;
+        network_reductions = radial,
+        irreducible_buses = bus_number_selector([103, 116]),
+    )
     @test !haskey(get_network_reduction_data(from_selector).reverse_bus_search_map, 116)
     @test _reduction_summary(from_selector) == _reduction_summary(from_numbers)
 
@@ -94,7 +98,11 @@ end
         irreducible_buses = make_selector(ACBus, "BUS 116_117"),
     )
     from_numbers =
-        Ybus(sys; network_reductions = degree_two, irreducible_buses = Set([117]))
+        Ybus(
+            sys;
+            network_reductions = degree_two,
+            irreducible_buses = bus_number_selector(Set([117])),
+        )
     @test 117 ∉ get_network_reduction_data(from_selector).removed_buses
     @test _reduction_summary(from_selector) == _reduction_summary(from_numbers)
 end
@@ -104,11 +112,21 @@ end
     selector = make_selector(ACBus, PSY.get_name(PSY.get_bus(sys, 8)))
     reductions = NetworkReduction[RadialReduction()]
     ptdf_selector = PTDF(sys; network_reductions = reductions, irreducible_buses = selector)
-    ptdf_numbers = PTDF(sys; network_reductions = reductions, irreducible_buses = [8])
+    ptdf_numbers = PTDF(
+        sys;
+        network_reductions = reductions,
+        irreducible_buses = bus_number_selector([8]),
+    )
     @test ptdf_selector.axes == ptdf_numbers.axes
     @test isapprox(ptdf_selector.data, ptdf_numbers.data)
 
     modf_selector =
         VirtualMODF(sys; network_reductions = reductions, irreducible_buses = selector)
     @test 8 ∈ get_network_reduction_data(modf_selector).irreducible_buses
+end
+
+@testset "irreducible_buses rejects bus numbers" begin
+    sys = PSB.build_system(PSITestSystems, "c_sys14")
+    @test_throws TypeError Ybus(sys; irreducible_buses = [8])
+    @test_throws TypeError VirtualMODF(sys; irreducible_buses = Set([8]))
 end

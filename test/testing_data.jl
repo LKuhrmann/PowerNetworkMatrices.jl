@@ -7,6 +7,9 @@ include(joinpath(DATA_DIR, "psy_data", "data_14bus_pu.jl"))
 
 RTS = PSB.build_system(PSB.PSITestSystems, "test_RTS_GMLC_sys");
 
+# Select the AC buses with the given numbers, for the `irreducible_buses` keyword.
+bus_number_selector(numbers) = make_selector(b -> PSY.get_number(b) in numbers, ACBus)
+
 # mixed up ids for data_5bus_pu
 Br5NS_ids = [2, 3, 5, 1, 4, 6]
 Arc5NS_ids = [(1, 4), (1, 5), (3, 4), (1, 2), (2, 3), (4, 5)]

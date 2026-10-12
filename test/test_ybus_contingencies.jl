@@ -483,8 +483,8 @@ end
     # A finite BA-derived `delta_b` compared against a group susceptance summing an `Inf`
     # member, so a legitimate full outage was rejected as needing the tripped component.
     sys = _mk_zi_parallel_sys([(0.0, 0.0), (0.0, 0.1)])
-    ybus = Ybus(sys; irreducible_buses = [2, 3])
-    vptdf = VirtualPTDF(sys; irreducible_buses = [2, 3])
+    ybus = Ybus(sys; irreducible_buses = bus_number_selector([2, 3]))
+    vptdf = VirtualPTDF(sys; irreducible_buses = bus_number_selector([2, 3]))
     nr = get_network_reduction_data(ybus)
     @test haskey(PNM.get_parallel_branch_map(nr), (2, 3))
 

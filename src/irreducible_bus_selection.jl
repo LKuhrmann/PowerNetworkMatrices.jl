@@ -63,8 +63,3 @@ function get_irreducible_bus_numbers(sys::PSY.System, selector::IS.ComponentSele
     end
     return buses
 end
-
-# `irreducible_buses` keyword: a collection of bus numbers or a `ComponentSelector`.
-_irreducible_bus_set(::PSY.System, bus_numbers) = Set{Int}(bus_numbers)
-_irreducible_bus_set(sys::PSY.System, selector::IS.ComponentSelector) =
-    get_irreducible_bus_numbers(sys, selector)

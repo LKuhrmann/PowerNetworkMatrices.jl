@@ -18,6 +18,7 @@ using PowerSystemCaseBuilder
 
 import PowerNetworkMatrices as PNM
 import PowerSystemCaseBuilder as PSB
+import PowerSystems as PSY
 
 # Load a test system
 sys = PSB.build_system(PSSEParsingTestSystems, "psse_14_network_reduction_test_system")
@@ -51,14 +52,15 @@ The `DegreeTwoReduction` provides several configuration options:
 
 ### Protecting Specific Buses
 
-You can protect certain buses from reduction even if they have degree two:
+You can protect certain buses from reduction even if they have degree two. Select them with a
+`ComponentSelector` (see [`get_irreducible_bus_numbers`](@ref)):
 
 ```@repl tutorial_DegreeTwoReduction
 # Protect bus 115 from the degree-two reduction
 ybus_protected = Ybus(
     sys;
     network_reductions = NetworkReduction[DegreeTwoReduction()],
-    irreducible_buses = [115],
+    irreducible_buses = PSY.make_selector(b -> PSY.get_number(b) == 115, PSY.ACBus),
 );
 reduction_data_protected = get_network_reduction_data(ybus_protected);
 # Compare with unprotected case: 

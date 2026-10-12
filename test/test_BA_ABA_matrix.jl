@@ -151,7 +151,7 @@ end
     checked = 0
     for (label, sys) in systems
         pins = label == "zi_parallel" ? [2, 3] : Int[]
-        ybus = Ybus(sys; irreducible_buses = pins)
+        ybus = Ybus(sys; irreducible_buses = bus_number_selector(pins))
         nr = get_network_reduction_data(ybus)
         bus_lookup = PNM.get_bus_lookup(ybus)
         direct_map = PNM.get_direct_branch_map(nr)

@@ -158,13 +158,13 @@ ptdf_combined = PTDF(
 
 ### Protecting Specific Buses from Reduction
 
-Pass the buses that the reductions must not eliminate with the `irreducible_buses` keyword. It accepts bus numbers or a `ComponentSelector` (see [`get_irreducible_bus_numbers`](@ref)):
+Select the components whose buses the reductions must not eliminate with the `irreducible_buses` keyword. It takes a `ComponentSelector` (see [`get_irreducible_bus_numbers`](@ref)). This example selects buses 1 and 2 by number:
 
 ```@repl tutorial_PTDF_matrix
 # Protect specific buses from radial reduction
 ptdf_protected = PTDF(sys;
     network_reductions = NetworkReduction[RadialReduction()],
-    irreducible_buses = [1, 2],
+    irreducible_buses = make_selector(b -> get_number(b) in (1, 2), ACBus),
 );
 ```
 

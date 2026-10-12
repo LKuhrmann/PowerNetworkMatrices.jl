@@ -78,7 +78,7 @@ end
     ybus = Ybus(
         sys;
         network_reductions = NetworkReduction[RadialReduction()],
-        irreducible_buses = Set([16, 17]),
+        irreducible_buses = bus_number_selector(Set([16, 17])),
     )
     rr = get_network_reduction_data(ybus)
     @test !haskey(rr.reverse_bus_search_map, 16)

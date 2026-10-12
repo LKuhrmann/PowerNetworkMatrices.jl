@@ -289,7 +289,9 @@ end
     # switches survive as a `BranchesParallel`. Each raw weight is `Inf`, so a susceptance
     # -weighted average would read `Inf·0/Inf = NaN`.
     sys = _mk_zi_parallel_sys([(0.0, 0.0), (0.0, 0.0)])
-    nr = get_network_reduction_data(Ybus(sys; irreducible_buses = [2, 3]))
+    nr = get_network_reduction_data(
+        Ybus(sys; irreducible_buses = bus_number_selector([2, 3])),
+    )
     bp = PNM.get_parallel_branch_map(nr)[(2, 3)]
     @test length(bp) == 2
 
@@ -319,7 +321,7 @@ end
     )
     add_component!(sys_shifted, pst)
     nr_shifted = get_network_reduction_data(
-        Ybus(sys_shifted; irreducible_buses = [2, 3]),
+        Ybus(sys_shifted; irreducible_buses = bus_number_selector([2, 3])),
     )
     bp_shifted = PNM.get_parallel_branch_map(nr_shifted)[(2, 3)]
     # Weights 1/ZERO_IMPEDANCE_X_EPSILON, 1/0.1, 1/0.2; only the last is shifted.
