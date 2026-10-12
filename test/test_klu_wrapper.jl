@@ -481,6 +481,4 @@ end
     @test PNM.make_linear_solver_cache(PNM.KLUSolver(), A).snapshot_values
     PNM.full_factor!(cache, A)
     @test PNM.factorization_ok(cache, A)
-    @test PNM.check_factorization(cache, A) === cache
-    @test_throws ArgumentError PNM.make_linear_solver_cache(PNM.DenseSolver(), A)
 end

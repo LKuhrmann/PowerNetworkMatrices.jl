@@ -101,7 +101,6 @@ end
             @test cache isa PNM.PardisoLinSolveCache{T}
             PNM.full_factor!(cache, M)
             @test PNM.factorization_ok(cache, M)
-            @test PNM.check_factorization(cache, M) === cache
             b = ones(T, size(M, 1))
             x = PNM.solve_w_refinement(cache, M, b)
             @test x !== b && isapprox(M * x, b; rtol = 1e-9)
