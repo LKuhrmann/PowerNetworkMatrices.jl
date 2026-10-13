@@ -155,6 +155,8 @@ auto-applied during `Ybus` construction.
         sparse on large systems.
 - `max_cache_size::Int`: Max cache size in MiB per contingency (default: MAX_CACHE_SIZE_MiB)
 - `network_reductions::Vector{NetworkReduction}`: Network reductions to apply
+- `irreducible_buses::IS.ComponentSelector`: Components whose buses the network reductions must
+        keep (see [`get_irreducible_bus_numbers`](@ref)). Default: `IS.make_selector()`
 - `automatically_register_outages::Bool`: Register all system Outage attributes (default: true)
 """
 function VirtualMODF(
@@ -163,12 +165,11 @@ function VirtualMODF(
     tol::Union{Float64, AutoTolerance} = DEFAULT_AUTO_TOLERANCE,
     max_cache_size::Int = MAX_CACHE_SIZE_MiB,
     network_reductions::Vector{NetworkReduction} = NetworkReduction[],
-    irreducible_buses = Set{Int}(),
+    irreducible_buses::IS.ComponentSelector = IS.make_selector(),
     automatically_register_outages::Bool = true,
     kwargs...,
 )
-    # Accept any iterable of bus numbers and normalize once, matching `Ybus`.
-    irreducible_buses = Set{Int}(irreducible_buses)
+    user_irreducible = get_irreducible_bus_numbers(sys, irreducible_buses)
     resolve_linear_solver(linear_solver)
 
     # Split so the zero-impedance entry reaches `Ybus` (which applies it first) instead of
@@ -178,24 +179,24 @@ function VirtualMODF(
 
     # Outage/monitored buses are auto-protected so contingency branches survive
     # reduction. Collect them from `sys` before building the base Ybus and fold
-    # them into `irreducible_buses` so the auto-applied zero-impedance reduction
+    # them into the irreducible set so the auto-applied zero-impedance reduction
     # never merges away a monitored/outaged branch endpoint in the first place.
     # Registering an outage with previously-unseen monitored components after
     # construction shifts this set and requires rebuilding the MODF.
     protected_buses = _collect_protected_buses(sys)
-    applied_irreducible = union(irreducible_buses, protected_buses)
+    applied_irreducible = union(user_irreducible, protected_buses)
 
     # Build the base Ybus with the combined irreducible set (zero-impedance reduction
     # auto-applied here honors it); this is the starting point for further reductions.
-    Ymatrix = Ybus(
-        sys;
-        irreducible_buses = applied_irreducible,
+    Ymatrix = _build_ybus(
+        sys,
+        applied_irreducible;
         network_reductions = NetworkReduction[zero_impedance_reduction],
         kwargs...,
     )
 
-    # radial/degree-two read the container's irreducible set (already seeded above via
-    # `Ybus`'s `irreducible_buses`). Ward's `study_buses` defines the retained network rather
+    # radial/degree-two read the container's irreducible set (already seeded above by
+    # `_build_ybus`). Ward's `study_buses` defines the retained network rather
     # than exempting buses, so it is validated against the contingencies — but only the ones
     # this MODF will actually register.
     automatically_register_outages &&
@@ -228,7 +229,8 @@ system's outages, sharing one factorization across multiple virtual matrices.
 The core arrives already reduced and factorized, so this path cannot protect the outaged
 and monitored buses the way `VirtualMODF(sys; ...)` does. Registration therefore validates
 each outage against the core's surviving arcs and errors when a reduction ate one. Reduce
-the core with those buses in `irreducible_buses`, or build from the system instead.
+the core with those components in the `irreducible_buses` selector, or build from the system
+instead.
 """
 function VirtualMODF(
     core::VirtualFactorCore,
@@ -297,7 +299,7 @@ function _validate_transmission_survived(
             "Outage (label=$(mod.label)) references in-service transmission component(s) \
             $(join(names, ", ")) that a network reduction eliminated; every query would \
             return the base-case row. Build with \
-            VirtualMODF(sys; network_reductions = ...) or put their buses in \
+            VirtualMODF(sys; network_reductions = ...) or select them with \
             irreducible_buses.",
         ),
     )

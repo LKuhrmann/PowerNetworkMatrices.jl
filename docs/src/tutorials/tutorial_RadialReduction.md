@@ -48,14 +48,22 @@ PNM.get_removed_arcs(reduction_data)
 
 ## Protecting Specific Buses from Reduction
 
-In some cases, you may want to preserve certain buses even if they are radial. This can be done using the `irreducible_buses` parameter:
+In some cases, you may want to preserve certain buses even if they are radial. Select them with
+a `ComponentSelector` and pass it to the matrix constructor with the `irreducible_buses` keyword.
+The reduction keeps the buses of the selected components: a bus keeps itself, a branch keeps its
+end buses, and an injector keeps the bus it connects to. See
+[`get_irreducible_bus_numbers`](@ref) for the rules.
 
 ```@repl tutorial_RadialReduction
-# Create radial reduction that protects buses 8 and 14
-reduction = RadialReduction(; irreducible_buses = [8, 14]);
-
-# Apply to system (buses must exist in the system)
-ybus_protected = Ybus(sys; network_reductions = NetworkReduction[reduction]);
+import PowerSystems as PSY
+# Protect buses 8 and 14 from the radial reduction
+selector = PSY.make_selector(b -> PSY.get_number(b) in (8, 14), PSY.ACBus);
+get_irreducible_bus_numbers(sys, selector)
+ybus_protected = Ybus(
+    sys;
+    network_reductions = NetworkReduction[RadialReduction()],
+    irreducible_buses = selector,
+);
 
 # Bus 8 was radial, but preserved from reduction
 reduction_data = get_network_reduction_data(ybus_protected);

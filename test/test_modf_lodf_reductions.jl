@@ -578,7 +578,7 @@ end
 
 @testset "virtual factor member weights are finite for a zero-impedance member" begin
     sys = _mk_zi_parallel_sys([(0.0, 0.0), (0.0, 0.1)])
-    ybus = Ybus(sys; irreducible_buses = [2, 3])
+    ybus = Ybus(sys; irreducible_buses = bus_number_selector([2, 3]))
     nr = get_network_reduction_data(ybus)
     ba = BA_Matrix(ybus)
     arc_ax = PNM.get_arc_axis(nr)

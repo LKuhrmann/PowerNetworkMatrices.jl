@@ -29,6 +29,7 @@ export apply_ybus_modification!
 export restore_ybus_modification!
 export compute_ybus_delta
 export get_applied_reductions
+export get_irreducible_bus_numbers
 export DC_ABA_Matrix_Factorized
 export DC_ABA_Matrix_Unfactorized
 export DC_PTDF_Matrix
@@ -140,6 +141,7 @@ include("Ybus.jl")
 include("apply_zero_impedance_reduction.jl")
 include("IncidenceMatrix.jl")
 include("reduction_helpers.jl")
+include("irreducible_bus_selection.jl")
 include("AdjacencyMatrix.jl")
 include("connectivity_checks.jl")
 include("bridges.jl")
