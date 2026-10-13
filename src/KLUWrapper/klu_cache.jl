@@ -71,6 +71,10 @@ mutable struct KLULinSolveCache{
     late_analyses::Int
     # Solves the caller reran from scratch after failing on a reused pivot order.
     cold_retries::Int
+    # The `plan.q` that `lean_plan` was built from, and the column pairs swapped in it.
+    # `swap_lean_columns!` compares against them to skip a swap that changes nothing.
+    lean_base_q::Vector{Int32}
+    lean_pairs::Vector{Tuple{Int, Int}}
 end
 
 # Returns true when this call took ownership and must release it, false on
@@ -499,6 +503,7 @@ function KLULinSolveCache(
         Ti[],
         Threads.Atomic{UInt}(0),
         _NO_LEAN_PLAN, _NO_LEAN_VALUES, false, false, false, false, 0, 0, 0, 0, 0,
+        Int32[], Tuple{Int, Int}[],
     )
     finalizer(_finalize_klu_handles!, cache)
     return cache
@@ -967,6 +972,8 @@ function set_lean_plan!(cache::KLULinSolveCache{Float64}, plan::LeanLUPlan)
         # An accepted lean refactor leaves the KLU numeric holding older factors.
         cache.lean_active && _drop_numeric!(cache)
         cache.lean_plan = plan
+        cache.lean_base_q = plan.q
+        empty!(cache.lean_pairs)
         cache.lean_vals = LeanLUValues(plan)
         cache.has_lean_plan = true
         cache.lean_active = false
@@ -1037,7 +1044,8 @@ vice versa, each on its planned pivot row. Solutions come back in the original c
 and the pivot-ratio test still judges every refactor. A pair whose columns differ in pattern is
 left in place (a step's L/U pattern covers only its own column). If the planned pivots then
 fail the pivot-ratio test, the refactor uses `klu_factor`. An empty `pairs` restores `plan`'s
-own order.
+own order. A call that installs the order the cache already holds returns at once: it keeps the
+numeric factors and does not allocate. Each column must appear in at most one pair.
 
 PowerFlows uses it when a bus changes between PV and REF: the swap exchanges the bus's two
 state columns, so the planned pivots stay non-zero.
@@ -1047,36 +1055,57 @@ function swap_lean_columns!(cache::KLULinSolveCache{Float64}, plan::LeanLUPlan, 
         (cache.has_lean_plan && cache.lean_plan.p === plan.p) || throw(
             ArgumentError("swap_lean_columns!: `plan` is not the cache's lean plan."),
         )
-        isempty(pairs) && cache.lean_plan.q === plan.q && return cache
+        _swaps_installed(cache, plan, pairs) && return cache
         # The current lean factors were computed in the old column order.
         if cache.lean_active
             cache.lean_active = false
             _drop_numeric!(cache)
         end
-        cache.lean_plan = plan
-        isempty(pairs) && return cache
         q = copy(plan.q)
+        applied = Tuple{Int, Int}[]
         for (a, b) in pairs
             _same_column_pattern(plan, a, b) || continue
             ia = findfirst(==(a), q)
             ib = findfirst(==(b), q)
             q[ia] = b
             q[ib] = a
+            push!(applied, (Int(a), Int(b)))
         end
-        cache.lean_plan = LeanLUPlan(
-            plan.n, plan.rcond0, plan.p, q, plan.cp, plan.dpos, plan.row, plan.a_row,
-            plan.dep_lb, plan.dep_le, plan.a_colptr, plan.a_rowval,
-        )
+        cache.lean_pairs = applied
+        cache.lean_base_q = plan.q
+        if isempty(applied)
+            cache.lean_plan = plan
+        else
+            cache.lean_plan = LeanLUPlan(
+                plan.n, plan.rcond0, plan.p, q, plan.cp, plan.dpos, plan.row,
+                plan.a_row,
+                plan.dep_lb, plan.dep_le, plan.a_colptr, plan.a_rowval,
+            )
+        end
         return cache
     end
 end
 
+# The one swap rule: columns `a` and `b` exchange places only if they have the same pattern.
 function _same_column_pattern(plan::LeanLUPlan, a::Integer, b::Integer)
     cp = plan.a_colptr
     ra = cp[a]:(cp[a + 1] - 1)
     rb = cp[b]:(cp[b + 1] - 1)
     length(ra) == length(rb) || return false
     return view(plan.a_rowval, ra) == view(plan.a_rowval, rb)
+end
+
+# True when `pairs`, filtered by `_same_column_pattern`, are the swaps the cache applied to `plan.q`.
+function _swaps_installed(cache::KLULinSolveCache, plan::LeanLUPlan, pairs)
+    cache.lean_base_q === plan.q || return false
+    applied = cache.lean_pairs
+    k = 0
+    for (a, b) in pairs
+        _same_column_pattern(plan, a, b) || continue
+        k += 1
+        (k <= length(applied) && applied[k] == (Int(a), Int(b))) || return false
+    end
+    return k == length(applied)
 end
 
 """

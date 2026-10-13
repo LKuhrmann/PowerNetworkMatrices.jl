@@ -472,3 +472,13 @@ end
     X = PNM.solve_w_refinement(cache, A, b)
     @test isapprox(X, x_true, atol = 1e-10)
 end
+
+@testset "make_linear_solver_cache and factorization_ok on KLU" begin
+    A = SparseArrays.spdiagm(0 => fill(2.0, 5), 1 => fill(0.1, 4), -1 => fill(0.1, 4))
+    cache = PNM.make_linear_solver_cache(PNM.KLUSolver(), A; snapshot_values = false)
+    @test cache isa PNM.KLULinSolveCache{Float64, Int}
+    @test !cache.snapshot_values
+    @test PNM.make_linear_solver_cache(PNM.KLUSolver(), A).snapshot_values
+    PNM.full_factor!(cache, A)
+    @test PNM.factorization_ok(cache, A)
+end

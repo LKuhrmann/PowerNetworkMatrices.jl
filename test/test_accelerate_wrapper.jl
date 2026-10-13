@@ -291,3 +291,31 @@ end
     end
     @test detected
 end
+
+@testset "AAFactorCache: generic factor functions and factorization_ok" begin
+    PNM._has_apple_accelerate_backend() || return
+    for Y in (_random_unsymmetric(30), _complex_ybus_block())
+        T = eltype(Y)
+        cache = PNM.make_linear_solver_cache(PNM.AppleAccelerateLUSolver(), Y)
+        @test cache isa PNM.AAFactorCache{T}
+        PNM.full_factor!(cache, Y)
+        @test PNM.is_factored(cache)
+        PNM.numeric_refactor!(cache, Y)
+        b = ones(T, size(Y, 1))
+        x = copy(b)
+        PNM.solve!(cache, x)
+        @test isapprox(Y * x, b; rtol = 1e-9)
+        @test PNM.factorization_ok(cache, Y)
+    end
+
+    # The probe sees a singular matrix that libSparse factors without an error.
+    L = _floating_complex_ring(4)
+    flagged = try
+        cache = PNM.make_linear_solver_cache(PNM.AppleAccelerateLUSolver(), L)
+        PNM.full_factor!(cache, L)
+        !PNM.factorization_ok(cache, L)
+    catch e
+        e isa LinearAlgebra.SingularException
+    end
+    @test flagged
+end
