@@ -1,38 +1,3 @@
-@kwdef mutable struct BranchMapsByType
-    direct_branch_map::Dict{DataType, Any} = Dict{DataType, Any}()
-    reverse_direct_branch_map::Dict{DataType, Any} = Dict{DataType, Any}()
-    parallel_branch_map::Dict{DataType, Any} = Dict{DataType, Any}()
-    reverse_parallel_branch_map::Dict{DataType, Any} = Dict{DataType, Any}()
-    series_branch_map::Dict{DataType, Any} = Dict{DataType, Any}()
-    reverse_series_branch_map::Dict{DataType, Any} = Dict{DataType, Any}()
-end
-
-const _BRANCH_MAPS_BY_TYPE_FIELDS = fieldnames(BranchMapsByType)
-
-function Base.iterate(b::BranchMapsByType, state = 1)
-    state > length(_BRANCH_MAPS_BY_TYPE_FIELDS) && return nothing
-    f = _BRANCH_MAPS_BY_TYPE_FIELDS[state]
-    return (String(f) => getfield(b, f), state + 1)
-end
-
-Base.length(::BranchMapsByType) = length(_BRANCH_MAPS_BY_TYPE_FIELDS)
-
-function Base.isempty(b::BranchMapsByType)
-    for f in _BRANCH_MAPS_BY_TYPE_FIELDS
-        isempty(getfield(b, f)) || return false
-    end
-    return true
-end
-
-function Base.empty!(b::BranchMapsByType)
-    for f in _BRANCH_MAPS_BY_TYPE_FIELDS
-        empty!(getfield(b, f))
-    end
-    return
-end
-
-Base.:(==)(a::BranchMapsByType, b::BranchMapsByType) = _fieldwise_equal(a, b)
-
 """
     NetworkReductionData
 
