@@ -878,29 +878,11 @@ end
 ##############################################################################
 
 """
-Stable, order-independent summary of a branch index. Two indexes with equal fingerprints
-agree on every (map kind, branch type, arc) => entry-name association, which is what the
-downstream axis and lookup code actually depends on. Types and map-kind tags are stringified
-so an index keying them by `Symbol` compares equal to one keying them by `String`.
+Stable, order-independent summary of a branch index: every (branch type, name) => arc and
+(branch type, component) => entry-name association, which is what the downstream axis and
+lookup code actually depends on. Types are stringified so the summaries compare as plain data.
 """
-function branch_index_fingerprint(
-    maps_by_type::PNM.BranchMapsByType,
-    name_to_arc::Dict,
-    component_to_entry::Dict,
-)
-    by_type = Tuple{String, String, Tuple{Int, Int}, String}[]
-    for (kind, per_type) in maps_by_type
-        for (T, submap) in per_type
-            for (key, value) in submap
-                # Forward maps are arc-keyed with an entry value; reverse maps are
-                # entry-keyed with an arc value.
-                arc, entry = key isa Tuple{Int, Int} ? (key, value) : (value, key)
-                push!(by_type, (String(kind), string(T), arc, PNM.get_name(entry)))
-            end
-        end
-    end
-    sort!(by_type)
-
+function branch_index_fingerprint(name_to_arc::Dict, component_to_entry::Dict)
     # No map-of-origin column: an entry is identified by its arc, and which reduction map
     # holds it is answered by `arc_provenance` off the entry rather than stored alongside.
     names = Tuple{String, String, Tuple{Int, Int}}[]
@@ -919,7 +901,7 @@ function branch_index_fingerprint(
     end
     sort!(redirects)
 
-    return (; by_type, names, redirects)
+    return (; names, redirects)
 end
 
 """
@@ -953,7 +935,6 @@ end
 
 "Order-independent fingerprint of a `BranchCatalog`."
 catalog_fingerprint(c::PNM.BranchCatalog) = branch_index_fingerprint(
-    PNM.get_all_branch_maps_by_type(c),
     PNM.get_name_to_arc_maps(c),
     PNM.get_component_to_reduction_name_map(c),
 )

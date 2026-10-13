@@ -41,7 +41,6 @@ Two consequences: `final_arc_map` is built in a pass *after* the peel, keyed off
 Known weak spots (2026-07-02 audit) — don't extend them:
 
   - Reduction invariants (forward/reverse map sync) are never checked; islanding during radial reduction only `@warn`s (`radial_reduction.jl`, the `iszero(parent)` arm). New reduction code should validate loudly.
-  - `populate_branch_maps_by_type!` (`NetworkReductionData.jl`) is lazy with no invalidation — mutating reduction state after first query is unsafe.
   - PF and POM currently iterate `NetworkReductionData` internal maps directly; prefer adding accessor API here over widening that reach.
 
 ## Transformers are circuits, not types (PSY `d19f3244f`, PR #1714)

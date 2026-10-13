@@ -6,7 +6,6 @@
         fp = catalog_fingerprint(catalog)
 
         # A reducing fixture must produce a non-empty index.
-        @test !isempty(fp.by_type)
         @test !isempty(fp.names)
 
         # Every arc the index exposes must have both endpoints on the reduced bus axis.
@@ -43,7 +42,7 @@ end
     @test PNM.get_network_reduction_data(filtered) === PNM.get_network_reduction_data(base)
     bf, ff = catalog_fingerprint(base), catalog_fingerprint(filtered)
     @test issubset(Set(ff.names), Set(bf.names))
-    @test issubset(Set(ff.by_type), Set(bf.by_type))
+    @test issubset(Set(ff.redirects), Set(bf.redirects))
     @test length(ff.names) < length(bf.names)
 end
 
@@ -86,11 +85,7 @@ end
     wrapper_map = PNM.get_name_to_arc_map(catalog, PNM.ThreeWindingTransformerCircuit)
     @test merged_arc in values(wrapper_map)
 
-    # No bucket anywhere is keyed by the wrapper type.
-    maps = PNM.get_all_branch_maps_by_type(catalog)
-    for (_, per_type) in maps
-        @test !haskey(per_type, PNM.ThreeWindingTransformerCircuit)
-    end
+    # No index is keyed by the wrapper type.
     @test !haskey(PNM.get_name_to_arc_maps(catalog), PNM.ThreeWindingTransformerCircuit)
 
     # Each winding still redirects to the group entry that carries its flow.

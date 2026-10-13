@@ -41,7 +41,6 @@ one pass over the reduction maps.
 # Fields
 - `network_reduction_data::NetworkReductionData`: the reduction this indexes
 - `arcs`: arc => [`ArcEntry`](@ref). The single source of truth.
-- `maps_by_type::BranchMapsByType`: the six reduction maps re-bucketed by branch type
 - `name_to_arc`: per type, entry name => arc
 - `component_to_entry_name`: per type, component name => name of the entry representing it
 - `component_name_index`: component name => every candidate claiming it. Names are unique
@@ -51,7 +50,6 @@ one pass over the reduction maps.
 struct BranchCatalog
     network_reduction_data::NetworkReductionData
     arcs::ARC_TABLE
-    maps_by_type::BranchMapsByType
     name_to_arc::NAME_TO_ARC
     component_to_entry_name::COMPONENT_TO_ENTRY
     component_name_index::COMPONENT_NAME_INDEX
@@ -59,7 +57,6 @@ end
 
 get_network_reduction_data(c::BranchCatalog) = c.network_reduction_data
 get_arc_table(c::BranchCatalog) = c.arcs
-get_all_branch_maps_by_type(c::BranchCatalog) = c.maps_by_type
 get_name_to_arc_maps(c::BranchCatalog) = c.name_to_arc
 get_component_to_reduction_name_map(c::BranchCatalog) = c.component_to_entry_name
 get_component_name_index(c::BranchCatalog) = c.component_name_index
@@ -101,7 +98,7 @@ get_component_to_reduction_name_map(
 ) = get_component_to_reduction_name_map(c, PSY.ThreeWindingTransformer)
 
 function Base.isempty(c::BranchCatalog)
-    return isempty(c.maps_by_type) && isempty(c.name_to_arc) &&
+    return isempty(c.name_to_arc) &&
            isempty(c.component_to_entry_name) && isempty(c.component_name_index)
 end
 
@@ -267,14 +264,6 @@ function _fill_bucket!(bucket::Dict, pairs::Vector)
     return bucket
 end
 
-# `empty_bucket(first(pairs))` fixes the bucket's type, as the first insert used to.
-function _fill_buckets!(dest::Dict{DataType, Any}, staged::_VectorsByType, empty_bucket)
-    for (T, pairs) in staged
-        dest[T] = _fill_bucket!(empty_bucket(first(pairs)), pairs)
-    end
-    return
-end
-
 """
 One `SortedDict` per type, bulk-loaded from the staged `name => arc` writes. The stable sort keeps
 writes to one name in order and the last one wins, as repeated `setindex!` did; a collision that
@@ -314,13 +303,12 @@ function _record_arc!(arcs::ARC_TABLE, arc::ARC_ENTRY, entry)
 end
 
 """
-Stage a forward (arc-keyed) reduction map under the buckets `bucket_types(entry)` names.
+Index a forward (arc-keyed) reduction map's names under the types `bucket_types(entry)` names.
 
-The parallel map's buckets are widened to `AbstractBranchesParallel` so a
-`MixedBranchesParallel` is reachable under every member type it contains.
+A parallel group is filed under every member type it contains, so a `MixedBranchesParallel`
+is reachable from each of them.
 """
 function _index_forward!(
-    staged::_VectorsByType,
     names::_VectorsByType,
     arcs::ARC_TABLE,
     source,
@@ -328,14 +316,13 @@ function _index_forward!(
     bucket_types,
 )
     for (arc, entry) in source
-        _index_forward_entry!(staged, names, arcs, arc, entry, predicate, bucket_types)
+        _index_forward_entry!(names, arcs, arc, entry, predicate, bucket_types)
     end
     return
 end
 
 # Function barrier: one dynamic dispatch per entry, concrete below it.
 function _index_forward_entry!(
-    staged::_VectorsByType,
     names::_VectorsByType,
     arcs::ARC_TABLE,
     arc::ARC_ENTRY,
@@ -346,35 +333,31 @@ function _index_forward_entry!(
     _entry_matches(entry, predicate) || return
     name = _record_arc!(arcs, arc, entry)
     for T in bucket_types(entry)
-        _push_by_type!(staged, T, arc => entry)
         _push_by_type!(names, T, name => arc)
     end
     return
 end
 
 """
-Stage a reverse (entry-keyed) reduction map, recording which entry represents each member so
+Walk a reverse (entry-keyed) reduction map, recording which entry represents each member so
 a component absorbed into an aggregate can be redirected to the entry carrying its flow.
 
-The bucket *key* is `_get_segment_type(member)`, a PSY component type, while the bucket's key
-*type* is `typeof(member)`. For a 3W winding those differ: filed under the parent transformer
-type, holding `ThreeWindingTransformerCircuit` keys.
+A member is filed under `_get_segment_type(member)`, a PSY component type; a 3W winding is
+filed under the parent transformer type.
 """
 function _index_reverse!(
-    staged::_VectorsByType,
     entry_names::_VectorsByType,
     arcs::ARC_TABLE,
     source,
     predicate,
 )
     for (member, arc) in source
-        _index_reverse_entry!(staged, entry_names, arcs, member, arc, predicate)
+        _index_reverse_entry!(entry_names, arcs, member, arc, predicate)
     end
     return
 end
 
 function _index_reverse_entry!(
-    staged::_VectorsByType,
     entry_names::_VectorsByType,
     arcs::ARC_TABLE,
     member::PSY.ACTransmission,
@@ -386,7 +369,6 @@ function _index_reverse_entry!(
     # group fails. Skip such a member: the forward pass gave its arc no row in `arcs`.
     haskey(arcs, arc) || return
     T = _get_segment_type(member)
-    _push_by_type!(staged, T, member => arc)
     # The name comes from the table, not from a second call to `_entry_name`: one
     # computation, so forward and reverse cannot disagree about what the entry is called.
     _push_by_type!(entry_names, T, get_name(member) => get_name(arcs[arc]))
@@ -394,14 +376,13 @@ function _index_reverse_entry!(
 end
 
 """
-Stage the series map. A chain is filed under every type appearing anywhere in it, so a caller
+Index the series map. A chain is filed under every type appearing anywhere in it, so a caller
 iterating one branch type finds every chain that type participates in.
 
 One entry name per arc, not one per segment. Members reach their entry through
 `component_to_entry`, which is where the per-component view belongs.
 """
 function _index_series!(
-    staged::_VectorsByType,
     arcs::ARC_TABLE,
     names::_VectorsByType,
     entry_names::_VectorsByType,
@@ -421,7 +402,6 @@ function _index_series!(
         for segment in chain
             segment_name = get_name(segment)
             for T in _get_concrete_types(segment)
-                _push_by_type!(staged, T, arc => chain)
                 _push_by_type!(names, T, segment_name => arc)
             end
             # A leaf redirects to the row its flow is reported under -- its segment, which
@@ -435,25 +415,6 @@ function _index_series!(
             end
         end
     end
-    return
-end
-
-# Names come from `_index_series!`, which sees the segment structure this map flattens away.
-function _index_reverse_series!(staged::_VectorsByType, source, predicate)
-    for (member, arc) in source
-        _index_reverse_series_entry!(staged, member, arc, predicate)
-    end
-    return
-end
-
-function _index_reverse_series_entry!(
-    staged::_VectorsByType,
-    member::PSY.ACTransmission,
-    arc::ARC_ENTRY,
-    predicate::F,
-) where {F}
-    _entry_matches(member, predicate) || return
-    _push_by_type!(staged, _get_segment_type(member), member => arc)
     return
 end
 
@@ -563,47 +524,16 @@ Only an unfiltered catalog runs [`_validate_catalog_closure`](@ref); a filter dr
 design.
 """
 function BranchCatalog(nrd::NetworkReductionData, predicate)
-    maps = BranchMapsByType()
     arcs = ARC_TABLE()
     names = _VectorsByType{Pair{String, ARC_ENTRY}}()
     entry_names = _VectorsByType{Pair{String, String}}()
 
-    direct = _VectorsByType{Pair{ARC_ENTRY, PSY.ACTransmission}}()
-    _index_forward!(direct, names, arcs, nrd.direct_branch_map, predicate,
+    _index_forward!(names, arcs, nrd.direct_branch_map, predicate,
         entry -> (_get_segment_type(entry),))
-    _fill_buckets!(maps.direct_branch_map, direct,
-        ((_, entry),) -> Dict{Tuple{Int, Int}, typeof(entry)}())
-
-    reverse_direct = _VectorsByType{Pair{PSY.ACTransmission, ARC_ENTRY}}()
-    _index_reverse!(reverse_direct, entry_names, arcs, nrd.reverse_direct_branch_map,
-        predicate)
-    _fill_buckets!(maps.reverse_direct_branch_map, reverse_direct,
-        ((member, _),) -> Dict{typeof(member), Tuple{Int, Int}}())
-
-    parallel = _VectorsByType{Pair{ARC_ENTRY, AbstractBranchesParallel}}()
-    _index_forward!(parallel, names, arcs, nrd.parallel_branch_map, predicate,
-        _get_concrete_types)
-    # Value type is `AbstractBranchesParallel`: a per-type bucket holds either a
-    # `BranchesParallel{T}` or a `MixedBranchesParallel` that includes a `T`.
-    _fill_buckets!(maps.parallel_branch_map, parallel,
-        _ -> Dict{Tuple{Int, Int}, AbstractBranchesParallel}())
-
-    reverse_parallel = _VectorsByType{Pair{PSY.ACTransmission, ARC_ENTRY}}()
-    _index_reverse!(reverse_parallel, entry_names, arcs, nrd.reverse_parallel_branch_map,
-        predicate)
-    _fill_buckets!(maps.reverse_parallel_branch_map, reverse_parallel,
-        ((member, _),) -> Dict{typeof(member), Tuple{Int, Int}}())
-
-    series = _VectorsByType{Pair{ARC_ENTRY, BranchesSeries}}()
-    _index_series!(series, arcs, names, entry_names, nrd.series_branch_map, predicate)
-    _fill_buckets!(maps.series_branch_map, series,
-        _ -> Dict{Tuple{Int, Int}, BranchesSeries}())
-
-    reverse_series = _VectorsByType{Pair{PSY.ACTransmission, ARC_ENTRY}}()
-    _index_reverse_series!(reverse_series, nrd.reverse_series_branch_map, predicate)
-    # Same key type as `reverse_series_branch_map` in `NetworkReductionData`.
-    _fill_buckets!(maps.reverse_series_branch_map, reverse_series,
-        _ -> Dict{PSY.ACTransmission, Tuple{Int, Int}}())
+    _index_reverse!(entry_names, arcs, nrd.reverse_direct_branch_map, predicate)
+    _index_forward!(names, arcs, nrd.parallel_branch_map, predicate, _get_concrete_types)
+    _index_reverse!(entry_names, arcs, nrd.reverse_parallel_branch_map, predicate)
+    _index_series!(arcs, names, entry_names, nrd.series_branch_map, predicate)
 
     name_to_arc = NAME_TO_ARC()
     _sorted_name_buckets!(name_to_arc, names)
@@ -619,7 +549,6 @@ function BranchCatalog(nrd::NetworkReductionData, predicate)
     return BranchCatalog(
         nrd,
         arcs,
-        maps,
         name_to_arc,
         component_to_entry,
         _build_component_name_index(nrd, arcs, predicate),
