@@ -635,6 +635,12 @@ end
     swap!((false, false))
     @test cache.lean_plan === plan
 
+    # A call that throws mid-loop leaves no partial record of installed swaps.
+    @test_throws BoundsError KW.swap_lean_columns!(cache, plan, ((3, 4), (9, 9)))
+    KW.swap_lean_columns!(cache, plan, ((3, 4),))
+    @test cache.lean_plan !== plan
+    swap!((false, false))
+
     # A pair whose columns differ in pattern is skipped, so the order stays the plan's.
     sparse_pv = SparseArrays.sparse(pv)
     other = PNM.KLULinSolveCache(sparse_pv)

@@ -1062,17 +1062,18 @@ function swap_lean_columns!(cache::KLULinSolveCache{Float64}, plan::LeanLUPlan, 
             _drop_numeric!(cache)
         end
         q = copy(plan.q)
-        empty!(cache.lean_pairs)
+        applied = Tuple{Int, Int}[]
         for (a, b) in pairs
             _same_column_pattern(plan, a, b) || continue
             ia = findfirst(==(a), q)
             ib = findfirst(==(b), q)
             q[ia] = b
             q[ib] = a
-            push!(cache.lean_pairs, (Int(a), Int(b)))
+            push!(applied, (Int(a), Int(b)))
         end
+        cache.lean_pairs = applied
         cache.lean_base_q = plan.q
-        if isempty(cache.lean_pairs)
+        if isempty(applied)
             cache.lean_plan = plan
         else
             cache.lean_plan = LeanLUPlan(
