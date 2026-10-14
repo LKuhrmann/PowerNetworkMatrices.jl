@@ -322,6 +322,12 @@ function get_equivalent_emergency_rating(bp::AbstractBranchesParallel)
     return _aggregate_known_ratings(sum, get_equivalent_emergency_rating, bp.branches)
 end
 
+# The members in service share the flow, so their ratings add.
+_post_outage_emergency_rating(
+    bp::AbstractBranchesParallel,
+    tripped::Set{PSY.ACTransmission},
+) = _aggregate_known_ratings(sum, _PostOutageRating(tripped), bp.branches)
+
 function Base.iterate(bp::AbstractBranchesParallel)
     return iterate(bp.branches)
 end

@@ -226,6 +226,51 @@ function get_equivalent_emergency_rating(branch::PSY.GenericArcImpedance)
     return get_equivalent_rating(branch)
 end
 
+# Rating that one component keeps after `tripped` goes out; `nothing` when unknown.
+struct _PostOutageRating
+    tripped::Set{PSY.ACTransmission}
+end
+
+(f::_PostOutageRating)(branch::PSY.ACTransmission) =
+    _post_outage_emergency_rating(branch, f.tripped)
+
+function _post_outage_emergency_rating(
+    branch::PSY.ACTransmission,
+    tripped::Set{PSY.ACTransmission},
+)
+    if branch in tripped
+        return 0.0
+    end
+    return get_equivalent_emergency_rating(branch)
+end
+
+# A chain is as strong as its weakest segment; an open segment opens the chain.
+_post_outage_emergency_rating(bs::BranchesSeries, tripped::Set{PSY.ACTransmission}) =
+    _aggregate_known_ratings(minimum, _PostOutageRating(tripped), bs)
+
+"""
+    get_post_outage_emergency_rating(entry, tripped) -> Float64
+
+Emergency rating, per unit on the system base, that `entry` keeps when every component in
+`tripped` is out of service. A tripped branch keeps zero. A series chain keeps the minimum
+over its segments, so one open segment opens the chain. A parallel group keeps the sum over
+its members. With an empty `tripped`, the value equals
+[`get_equivalent_emergency_rating`](@ref). Members with no known rating are skipped.
+"""
+function get_post_outage_emergency_rating(
+    entry::PSY.ACTransmission,
+    tripped::Set{PSY.ACTransmission},
+)::Float64
+    rating = _post_outage_emergency_rating(entry, tripped)
+    if isnothing(rating)
+        error(
+            "$(typeof(entry)) $(get_name(entry)) has no member with a known emergency " *
+            "rating, so its post-outage rating is undefined.",
+        )
+    end
+    return rating
+end
+
 # Indexed only when EVERY segment is: a chain missing one is not a valid representation of
 # the path between its endpoints.
 # Recursive: might be nested, have BranchesParallel as link in degree 2 chain.

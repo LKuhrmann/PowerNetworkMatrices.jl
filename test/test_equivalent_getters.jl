@@ -596,3 +596,58 @@ end
     @test PNM.get_equivalent_emergency_rating(circuit) >
           PNM.get_equivalent_rating(circuit)
 end
+
+@testset "Post-outage emergency rating keeps the members in service" begin
+    sys = PSB.build_system(PSB.PSITestSystems, "case10_radial_series_reductions")
+    buses = collect(PSY.get_components(PSY.ACBus, sys))
+    lines = PSY.Line[]
+    for (name, rating) in (("po_line_1", 100.0), ("po_line_2", 150.0), ("po_line_3", 200.0))
+        line = PSY.Line(; input_basis = u"CU",
+            name = name,
+            available = true,
+            active_power_flow = 0.0,
+            reactive_power_flow = 0.0,
+            arc = PSY.Arc(; from = buses[1], to = buses[2]),
+            r = 0.1,
+            x = 0.2,
+            b = (from = 0.01, to = 0.01),
+            g = (from = 0.01, to = 0.01),
+            rating = rating,
+            angle_limits = (min = -π / 2, max = π / 2),
+        )
+        PSY.add_component!(sys, line; skip_validation = true)
+        push!(lines, line)
+    end
+    line1, line2, line3 = lines
+    none = Set{PSY.ACTransmission}()
+
+    # A single branch keeps its rating until it trips.
+    @test PNM.get_post_outage_emergency_rating(line3, none) ≈ 200.0
+    @test PNM.get_post_outage_emergency_rating(line3, Set{PSY.ACTransmission}([line3])) ==
+          0.0
+
+    # A parallel pair keeps the members that stay in service.
+    bp = PNM.BranchesParallel([line1, line2])
+    @test PNM.get_post_outage_emergency_rating(bp, none) ≈
+          PNM.get_equivalent_emergency_rating(bp)
+    @test PNM.get_post_outage_emergency_rating(bp, Set{PSY.ACTransmission}([line1])) ≈ 150.0
+    @test PNM.get_post_outage_emergency_rating(bp, Set{PSY.ACTransmission}([line2])) ≈ 100.0
+    @test PNM.get_post_outage_emergency_rating(bp, Set{PSY.ACTransmission}([line3])) ≈ 250.0
+    @test PNM.get_post_outage_emergency_rating(
+        bp,
+        Set{PSY.ACTransmission}([line1, line2]),
+    ) == 0.0
+
+    # A series chain with the pair as one segment: the weakest segment after the trip.
+    bs = PNM.BranchesSeries((PSY.get_number(buses[1]), PSY.get_number(buses[2])))
+    PNM.add_branch!(bs, bp, :FromTo)
+    PNM.add_branch!(bs, line3, :FromTo)
+    @test PNM.get_post_outage_emergency_rating(bs, none) ≈
+          PNM.get_equivalent_emergency_rating(bs)
+    @test PNM.get_post_outage_emergency_rating(bs, Set{PSY.ACTransmission}([line1])) ≈ 150.0
+    @test PNM.get_post_outage_emergency_rating(bs, Set{PSY.ACTransmission}([line3])) == 0.0
+    @test PNM.get_post_outage_emergency_rating(
+        bs,
+        Set{PSY.ACTransmission}([line1, line2]),
+    ) == 0.0
+end
