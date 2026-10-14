@@ -142,6 +142,12 @@ method does. May be `nothing`.
 get_equivalent_emergency_rating(tw::ThreeWindingTransformerCircuit) =
     _circuit_emergency_rating(tw.circuit, get_name(tw))
 
+# Outages attach to the parent transformer, so tripping it opens every winding.
+is_open_after_outage(
+    tw::ThreeWindingTransformerCircuit,
+    tripped::AbstractSet{<:PSY.ACTransmission},
+) = tw in tripped || tw.transformer in tripped
+
 """
     get_equivalent_available(tw::ThreeWindingTransformerCircuit)
 

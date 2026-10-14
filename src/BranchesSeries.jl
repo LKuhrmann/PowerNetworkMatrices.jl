@@ -226,46 +226,65 @@ function get_equivalent_emergency_rating(branch::PSY.GenericArcImpedance)
     return get_equivalent_rating(branch)
 end
 
-# Rating that one component keeps after `tripped` goes out; `nothing` when unknown.
-struct _PostOutageRating
-    tripped::Set{PSY.ACTransmission}
-end
+"""
+    is_open_after_outage(entry, tripped) -> Bool
 
-(f::_PostOutageRating)(branch::PSY.ACTransmission) =
-    _post_outage_emergency_rating(branch, f.tripped)
-
-function _post_outage_emergency_rating(
+Whether `entry` carries no flow once every component in `tripped` is out of service. A
+branch is open when it is in `tripped`. A series chain is open when any segment is open. A
+parallel group is open when every member is open.
+"""
+is_open_after_outage(
     branch::PSY.ACTransmission,
-    tripped::Set{PSY.ACTransmission},
-)
-    if branch in tripped
-        return 0.0
-    end
-    return get_equivalent_emergency_rating(branch)
-end
+    tripped::AbstractSet{<:PSY.ACTransmission},
+) =
+    branch in tripped
 
-# A chain is as strong as its weakest segment; an open segment opens the chain.
-_post_outage_emergency_rating(bs::BranchesSeries, tripped::Set{PSY.ACTransmission}) =
-    _aggregate_known_ratings(minimum, _PostOutageRating(tripped), bs)
+is_open_after_outage(bs::BranchesSeries, tripped::AbstractSet{<:PSY.ACTransmission}) =
+    any(segment -> is_open_after_outage(segment, tripped), bs)
+
+# Rating of an entry that is not open after the outage; `nothing` when unknown. Every caller
+# filters open entries first, so a leaf here is always in service.
+_post_outage_emergency_rating(
+    branch::PSY.ACTransmission,
+    ::AbstractSet{<:PSY.ACTransmission},
+) = get_equivalent_emergency_rating(branch)
+
+# A chain is as strong as its weakest segment.
+_post_outage_emergency_rating(
+    bs::BranchesSeries,
+    tripped::AbstractSet{<:PSY.ACTransmission},
+) = _aggregate_known_ratings(
+    minimum,
+    segment -> _post_outage_emergency_rating(segment, tripped),
+    bs,
+)
 
 """
     get_post_outage_emergency_rating(entry, tripped) -> Float64
 
 Emergency rating, per unit on the system base, that `entry` keeps when every component in
-`tripped` is out of service. A tripped branch keeps zero. A series chain keeps the minimum
-over its segments, so one open segment opens the chain. A parallel group keeps the sum over
-its members. With an empty `tripped`, the value equals
+`tripped` is out of service. A series chain keeps the minimum over its segments. A parallel
+group keeps the sum over its members in service. With an empty `tripped`, the value equals
 [`get_equivalent_emergency_rating`](@ref). Members with no known rating are skipped.
+
+Throws when `entry` is open after the outage (see [`is_open_after_outage`](@ref)), or when
+no member in service has a known rating.
 """
 function get_post_outage_emergency_rating(
     entry::PSY.ACTransmission,
-    tripped::Set{PSY.ACTransmission},
+    tripped::AbstractSet{<:PSY.ACTransmission},
 )::Float64
+    if is_open_after_outage(entry, tripped)
+        error(
+            "$(typeof(entry)) $(get_name(entry)) carries no flow after the outage, so its " *
+            "post-outage rating is undefined.",
+        )
+    end
     rating = _post_outage_emergency_rating(entry, tripped)
     if isnothing(rating)
         error(
-            "$(typeof(entry)) $(get_name(entry)) has no member with a known emergency " *
-            "rating, so its post-outage rating is undefined.",
+            "$(typeof(entry)) $(get_name(entry)) has no member in service with a known " *
+            "emergency rating, so its post-outage rating is undefined.",
         )
     end
     return rating

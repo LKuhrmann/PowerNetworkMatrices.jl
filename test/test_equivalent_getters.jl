@@ -621,10 +621,15 @@ end
     line1, line2, line3 = lines
     none = Set{PSY.ACTransmission}()
 
-    # A single branch keeps its rating until it trips.
+    # A single branch keeps its rating until it trips; a tripped branch has no rating.
     @test PNM.get_post_outage_emergency_rating(line3, none) ≈ 200.0
-    @test PNM.get_post_outage_emergency_rating(line3, Set{PSY.ACTransmission}([line3])) ==
-          0.0
+    @test PNM.is_open_after_outage(line3, Set{PSY.ACTransmission}([line3]))
+    @test_throws ErrorException PNM.get_post_outage_emergency_rating(
+        line3,
+        Set{PSY.ACTransmission}([line3]),
+    )
+    # A concretely typed set is accepted.
+    @test PNM.get_post_outage_emergency_rating(line3, Set([line1])) ≈ 200.0
 
     # A parallel pair keeps the members that stay in service.
     bp = PNM.BranchesParallel([line1, line2])
@@ -633,10 +638,12 @@ end
     @test PNM.get_post_outage_emergency_rating(bp, Set{PSY.ACTransmission}([line1])) ≈ 150.0
     @test PNM.get_post_outage_emergency_rating(bp, Set{PSY.ACTransmission}([line2])) ≈ 100.0
     @test PNM.get_post_outage_emergency_rating(bp, Set{PSY.ACTransmission}([line3])) ≈ 250.0
-    @test PNM.get_post_outage_emergency_rating(
+    @test !PNM.is_open_after_outage(bp, Set{PSY.ACTransmission}([line1]))
+    @test PNM.is_open_after_outage(bp, Set{PSY.ACTransmission}([line1, line2]))
+    @test_throws ErrorException PNM.get_post_outage_emergency_rating(
         bp,
         Set{PSY.ACTransmission}([line1, line2]),
-    ) == 0.0
+    )
 
     # A series chain with the pair as one segment: the weakest segment after the trip.
     bs = PNM.BranchesSeries((PSY.get_number(buses[1]), PSY.get_number(buses[2])))
@@ -645,9 +652,40 @@ end
     @test PNM.get_post_outage_emergency_rating(bs, none) ≈
           PNM.get_equivalent_emergency_rating(bs)
     @test PNM.get_post_outage_emergency_rating(bs, Set{PSY.ACTransmission}([line1])) ≈ 150.0
-    @test PNM.get_post_outage_emergency_rating(bs, Set{PSY.ACTransmission}([line3])) == 0.0
-    @test PNM.get_post_outage_emergency_rating(
+    @test !PNM.is_open_after_outage(bs, Set{PSY.ACTransmission}([line1]))
+    @test PNM.is_open_after_outage(bs, Set{PSY.ACTransmission}([line3]))
+    @test PNM.is_open_after_outage(bs, Set{PSY.ACTransmission}([line1, line2]))
+    @test_throws ErrorException PNM.get_post_outage_emergency_rating(
         bs,
+        Set{PSY.ACTransmission}([line3]),
+    )
+
+    # A group drops an open chain and keeps the branch beside it.
+    outer = PNM.MixedBranchesParallel(PSY.ACTransmission[bs, line3])
+    @test !PNM.is_open_after_outage(outer, Set{PSY.ACTransmission}([line1, line2]))
+    @test PNM.get_post_outage_emergency_rating(
+        outer,
         Set{PSY.ACTransmission}([line1, line2]),
-    ) == 0.0
+    ) ≈ 200.0
+end
+
+@testset "Tripping a 3W transformer opens its windings" begin
+    sys = PSB.build_system(PSB.PSITestSystems, "case10_radial_series_reductions")
+    t3w = first(PSY.get_components(PSY.ThreeWindingTransformer, sys))
+    windings = [PNM.ThreeWindingTransformerCircuit(t3w, k) for k in 1:3]
+    line = first(PSY.get_components(PSY.Line, sys))
+    line_rating = PNM.get_equivalent_emergency_rating(line)
+
+    # Outages attach to the parent transformer, which opens every winding.
+    by_parent = Set{PSY.ACTransmission}([t3w])
+    @test all(w -> PNM.is_open_after_outage(w, by_parent), windings)
+    @test PNM.is_open_after_outage(windings[1], Set{PSY.ACTransmission}([windings[1]]))
+    @test !PNM.is_open_after_outage(windings[2], Set{PSY.ACTransmission}([windings[1]]))
+
+    bp = PNM.MixedBranchesParallel(PSY.ACTransmission[windings[1], line])
+    @test PNM.get_post_outage_emergency_rating(bp, by_parent) ≈ line_rating
+
+    @test !PNM.is_open_after_outage(bp, Set{PSY.ACTransmission}([line]))
+    @test PNM.get_post_outage_emergency_rating(bp, Set{PSY.ACTransmission}([line])) ≈
+          PNM.get_equivalent_emergency_rating(windings[1])
 end
