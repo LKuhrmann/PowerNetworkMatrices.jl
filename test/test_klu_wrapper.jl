@@ -408,6 +408,9 @@ end
     A = SparseArrays.spdiagm(0 => fill(4.0, n), 1 => fill(-1.0, n - 1),
         -1 => fill(-1.0, n - 1))
     cache = PNM.klu_factorize(A)
+    # Finalize caches dropped by earlier testsets while the lock is still free,
+    # so none of their finalizers runs inside the locked window below.
+    GC.gc()
 
     held = Base.Event()
     release = Base.Event()
@@ -422,10 +425,14 @@ end
     end
     wait(held)
     # Lock is busy: the finalizer must return immediately and defer the free.
-    KW._finalize_klu_cache!(cache)
+    # Run it in its own task so a blocking finalizer fails the test instead of
+    # deadlocking it (the lock is only released after this check).
+    fin = Threads.@spawn KW._finalize_klu_cache!(cache)
+    @test timedwait(() -> istaskdone(fin), 5.0) === :ok
     @test PNM.is_factored(cache)
     notify(release)
     wait(holder)
+    wait(fin)
     # Lock is free: the finalizer releases the handles.
     KW._finalize_klu_cache!(cache)
     @test !PNM.is_factored(cache)
