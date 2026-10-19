@@ -404,36 +404,19 @@ end
     # A finalizer can run while the current task is queued on `_LIBKLU_LOCK`;
     # blocking there fails ("val already in a list") and can hang the process.
     KW = PNM.KLUWrapper
-    n = 20
-    A = SparseArrays.spdiagm(0 => fill(4.0, n), 1 => fill(-1.0, n - 1),
-        -1 => fill(-1.0, n - 1))
-    cache = PNM.klu_factorize(A)
-    # Finalize caches dropped by earlier testsets while the lock is still free,
-    # so none of their finalizers runs inside the locked window below.
-    GC.gc()
+    cache = PNM.klu_factorize(SparseArrays.sparse(4.0 * LinearAlgebra.I, 3, 3))
+    GC.gc()  # run pending finalizers of earlier caches while the lock is free
 
-    held = Base.Event()
     release = Base.Event()
-    holder = Threads.@spawn begin
-        lock(KW._LIBKLU_LOCK)
-        try
-            notify(held)
-            wait(release)
-        finally
-            unlock(KW._LIBKLU_LOCK)
-        end
-    end
-    wait(held)
-    # Lock is busy: the finalizer must return immediately and defer the free.
-    # Run it in its own task so a blocking finalizer fails the test instead of
-    # deadlocking it (the lock is only released after this check).
-    fin = Threads.@spawn KW._finalize_klu_cache!(cache)
+    holder = @async @lock KW._LIBKLU_LOCK wait(release)  # another task holds the lock
+    yield()
+    @test islocked(KW._LIBKLU_LOCK)
+    # Must return at once (deferring the free); in a task so blocking fails, not hangs.
+    fin = @async KW._finalize_klu_cache!(cache)
     @test timedwait(() -> istaskdone(fin), 5.0) === :ok
     @test PNM.is_factored(cache)
     notify(release)
     wait(holder)
-    wait(fin)
-    # Lock is free: the finalizer releases the handles.
-    KW._finalize_klu_cache!(cache)
+    KW._finalize_klu_cache!(cache)  # lock free now: handles are released
     @test !PNM.is_factored(cache)
 end
