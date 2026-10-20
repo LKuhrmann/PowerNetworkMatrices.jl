@@ -399,3 +399,112 @@ end
     X = PNM.solve_w_refinement(cache, A, b)
     @test isapprox(X, x_true, atol = 1e-10)
 end
+
+@testset "KLU wrapper: deepcopy of a cache is refused" begin
+    # A deepcopy would bit-copy the libklu pointers, so two caches would own one
+    # factorization and one could free it while the other still solves with it.
+    # See scripts/diagnostics/klu_deepcopy_use_after_free.jl.
+    cache = PNM.klu_factorize(SparseArrays.sparse(4.0 * LinearAlgebra.I, 3, 3))
+    @test_throws ErrorException deepcopy(cache)
+    @test_throws ErrorException deepcopy((; inner = [cache]))  # also when nested
+    @test PNM.is_factored(cache)
+end
+
+# Multithreaded scenarios run in a child process: the exit scenario crashes or
+# hangs the process when it fails, and `Pkg.test` may run with one thread.
+const _KLU_THREADS_CHILD = raw"""
+using PowerNetworkMatrices, SparseArrays, LinearAlgebra
+const PNM = PowerNetworkMatrices
+m = 120  # 2D grid Laplacian, n = 14_400: factors large enough that frees unmap memory
+T = spdiagm(-1 => fill(-1.0, m - 1), 0 => fill(4.0, m), 1 => fill(-1.0, m - 1))
+E = spdiagm(-1 => fill(-1.0, m - 1), 1 => fill(-1.0, m - 1))
+A = kron(sparse(1.0I, m, m), T) + kron(E, sparse(1.0I, m, m))
+n = size(A, 1)
+n_tasks = 2 * Threads.nthreads()
+if ARGS[1] == "verify"
+    # Separate caches on concurrent tasks, all awaited. Dropped caches make their
+    # finalizers run while other tasks are inside libklu.
+    function work(seed)
+        K = PNM.klu_factorize(A)
+        n_bad = 0
+        for i in 1:400
+            x = sin.(seed .+ i .* (1:n))
+            y = A * x
+            PNM.solve!(K, y)
+            n_bad += norm(y - x) > 1e-8 * norm(x)
+            if i % 50 == 0
+                PNM.numeric_refactor!(K, A)
+                PNM.klu_factorize(A)
+                GC.gc(false)
+            end
+        end
+        return n_bad
+    end
+    println("bad=", sum(fetch.([Threads.@spawn work(s) for s in 1:n_tasks])))
+else  # "exit"
+    # Return from main while other threads are still solving; Julia then runs
+    # all finalizers at exit, including those of caches that are still in use.
+    started = Threads.Atomic{Int}(0)
+    b = A * ones(n)
+    for _ in 1:n_tasks
+        Threads.@spawn begin
+            K = PNM.klu_factorize(A)
+            Threads.atomic_add!(started, 1)
+            y = similar(b)
+            for i in 1:10^6
+                copyto!(y, b)
+                PNM.solve!(K, y)
+                i % 10 == 0 && yield()  # let the main task get back onto its thread
+            end
+        end
+    end
+    while started[] < n_tasks
+        sleep(0.01)
+    end
+    sleep(0.5)
+    println("main returning")
+end
+"""
+
+function _run_klu_threads_child(mode::String; threads::Int = 4, timeout::Real = 600)
+    cmd = `$(Base.julia_cmd()) --startup-file=no --threads=$threads
+        --project=$(Base.active_project()) -e $_KLU_THREADS_CHILD $mode`
+    out, err = IOBuffer(), IOBuffer()
+    p = run(pipeline(ignorestatus(cmd); stdout = out, stderr = err); wait = false)
+    hung = timedwait(() -> process_exited(p), timeout) !== :ok
+    hung && kill(p)
+    wait(p)
+    out_s, err_s = String(take!(out)), String(take!(err))
+    ok = !hung && success(p)
+    ok || @error "KLU threads child ($mode) failed" hung p.exitcode p.termsignal out_s err_s
+    return (; ok, out = out_s, err = err_s)
+end
+
+@testset "KLU wrapper: concurrent solves on separate caches are correct" begin
+    r = _run_klu_threads_child("verify")
+    @test r.ok
+    @test occursin("bad=0", r.out)
+end
+
+@testset "KLU wrapper: finalizer leaves handles alone once exiting" begin
+    KW = PNM.KLUWrapper
+    cache = PNM.klu_factorize(SparseArrays.sparse(4.0 * LinearAlgebra.I, 3, 3))
+    KW._EXITING[] = true
+    try
+        KW._finalize_klu_cache!(cache)
+        @test PNM.is_factored(cache)
+    finally
+        KW._EXITING[] = false
+    end
+    KW._finalize_klu_cache!(cache)
+    @test !PNM.is_factored(cache)
+end
+
+@testset "KLU wrapper: exit while other threads are solving does not crash" begin
+    # Regression test for the KLU.jl#31 failure mode: the exit-time finalizer
+    # sweep freeing factorizations that running tasks are still using.
+    r = _run_klu_threads_child("exit")
+    @test r.ok
+    @test occursin("main returning", r.out)
+    @test !occursin("error in running finalizer", r.err)
+end

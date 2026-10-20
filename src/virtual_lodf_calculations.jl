@@ -12,8 +12,8 @@ The VirtualLODF struct is indexed using branch names.
 # Thread-safety
 
 Concurrent `getindex` (and [`get_partial_lodf_row`](@ref)) is safe but serialized:
-every libklu solve runs under `_LIBKLU_LOCK` (process-wide) and the per-cache
-`solver_lock`, and the row cache is guarded by `cache_lock`. Multi-threaded
+every libklu solve runs under the per-cache `solver_lock`, and the row cache
+is guarded by `cache_lock`. Multi-threaded
 callers can issue requests concurrently; the libklu work runs one at a time.
 
 # Arguments
@@ -349,7 +349,7 @@ function VirtualLODF(
             )
     end
 
-    # Single scratch slot — solves serialize via `solver_lock` + `_LIBKLU_LOCK`.
+    # Single scratch slot — solves serialize via `solver_lock`.
     temp_data = [zeros(length(bus_ax))]
     work_ba_col = [zeros(length(valid_ix))]
     bus_to_valid_idx = _build_bus_to_valid_idx(length(bus_ax), valid_ix)
@@ -517,7 +517,7 @@ end
 
 Compute the partial LODF column for a susceptance change `delta_b` on arc `arc_idx`.
 
-Concurrent callers serialize on `vlodf.solver_lock` and `_LIBKLU_LOCK`.
+Concurrent callers serialize on `vlodf.solver_lock`.
 
 Uses the Sherman-Morrison (matrix inversion lemma) formula derived from DC power flow
 sensitivity analysis. For a change ``\\Delta b`` in the susceptance of arc ``e``, the change in flow

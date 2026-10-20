@@ -13,8 +13,8 @@ matrix.
 # Thread-safety
 
 Concurrent `getindex` is safe but serialized: every libklu solve is wrapped
-by `_LIBKLU_LOCK` (process-wide) and the per-cache `solver_lock` here, and
-the row cache is guarded by `cache_lock`. Multiple threads can call
+by the per-cache `solver_lock` here, and the row cache is guarded by
+`cache_lock`. Multiple threads can call
 `getindex` simultaneously; their libklu work runs one at a time, while the
 JuMP-side work (in callers) parallelizes freely.
 
@@ -69,8 +69,8 @@ JuMP-side work (in callers) parallelizes freely.
 - `work_ba_col::Vector{Vector{Float64}}`:
         Single-element BA-column scratch buffer.
 - `solver_lock::ReentrantLock`:
-        Serializes solves on this cache. Combined with `_LIBKLU_LOCK` at the
-        libklu boundary, ensures one solve at a time per cache.
+        Serializes solves on this cache, so there is one solve at a time per
+        cache.
 - `system_uuid::Union{Base.UUID, Nothing}`:
         UUID of the system used to construct the matrix, used to validate that
         modification operations are applied to the correct system. `nothing` when
@@ -281,8 +281,8 @@ function VirtualPTDF(
         dist_slack_normalized = Float64[]
     end
 
-    # Single scratch slot — solves serialize through `solver_lock` +
-    # `_LIBKLU_LOCK`, so per-worker scratch is unnecessary. Kept as a
+    # Single scratch slot — solves serialize through `solver_lock`, so
+    # per-worker scratch is unnecessary. Kept as a
     # `Vector{Vector{Float64}}` so `with_solver`'s callback signature
     # stays uniform across solver backends.
     valid_ix = setdiff(1:length(bus_ax), ref_bus_positions)

@@ -16,15 +16,14 @@ Caching is two-tiered:
 Concurrent `getindex` is safe but serialized: `solver_lock` (a `ReentrantLock`)
 is held for the full body of `getindex`, `clear_caches!`, and `clear_all_caches!`,
 so Dict mutations on the cache structures and the libklu solves it wraps all
-run under a single mutex. libklu activity additionally serializes through the
-process-wide `_LIBKLU_LOCK`. Two threads racing on a first-time query for the
+run under a single mutex. Two threads racing on a first-time query for the
 same modification serialize on `solver_lock`; the second observes the populated
 cache and skips the recomputation.
 
 # Arguments
 - `K::KLULinSolveCache{Float64}`:
         ABA factorization (single cache; concurrent `getindex` callers
-        serialize through `solver_lock` and `_LIBKLU_LOCK`).
+        serialize through `solver_lock`).
 - `BA::SparseArrays.SparseMatrixCSC{Float64, Int}`:
         BA matrix.
 - `A::SparseArrays.SparseMatrixCSC{Int8, Int}`:
@@ -77,8 +76,7 @@ cache and skips the recomputation.
         Single-element work array for BA column extraction.
 - `solver_lock::ReentrantLock`:
         Reentrant; held for the duration of `getindex` / `clear_*caches!`.
-        Serializes both libklu solves and Dict mutations on the caches;
-        combined with `_LIBKLU_LOCK` ensures one libklu call at a time.
+        Serializes both libklu solves and Dict mutations on the caches.
 - `system_uuid::Union{Base.UUID, Nothing}`:
         UUID of the system used to construct the matrix, used to validate that
         modification operations are applied to the correct system.
@@ -166,7 +164,7 @@ the lazy compute on first call and return the cached vector thereafter.
 get_PTDF_A_diag(vmodf::VirtualMODF) = vmodf.PTDF_A_diag
 
 # Woodbury kernel accessors. The Woodbury kernel always goes through
-# `with_solver` so it picks up the `solver_lock` + `_LIBKLU_LOCK` chain.
+# `with_solver` so it picks up the `solver_lock`.
 _get_BA(m::VirtualMODF) = m.BA
 _get_arc_susceptances(m::VirtualMODF) = m.arc_susceptances
 _get_valid_ix(m::VirtualMODF) = m.valid_ix
@@ -358,7 +356,7 @@ function VirtualMODF(
     branch_susceptances_by_arc =
         _extract_branch_susceptances_by_arc(BA.data, arc_ax, Ymatrix.network_reduction_data)
 
-    # Single scratch slot — solves serialize via `solver_lock` + `_LIBKLU_LOCK`.
+    # Single scratch slot — solves serialize via `solver_lock`.
     temp_data = [zeros(length(bus_ax))]
     work_ba_col = [zeros(length(valid_ix))]
     max_cache_bytes = max_cache_size * MiB

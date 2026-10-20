@@ -36,7 +36,7 @@ pages = OrderedDict(
         "Computational Considerations" => "explanation/computational_considerations.md",
         "Network Reduction Theory" => "explanation/network_reduction_theory.md",
         "Flowgate Methodology" => "explanation/flowgate_methodology.md",
-        "Concurrency and the KLU Lock" => "explanation/concurrency.md",
+        "Concurrency" => "explanation/concurrency.md",
         "Equivalent Representation of Reduced Branches" => "explanation/equivalent_branches.md",
         "Slack Distribution and Reference-Bus Conventions" => "explanation/slack_conventions.md",
     ],

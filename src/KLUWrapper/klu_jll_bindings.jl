@@ -3,12 +3,9 @@
 #   - `klu_l_*` / `klu_zl_*` for `SuiteSparse_long` (Int64) indices
 #   - `klu_*`   / `klu_z_*`  for `int`              (Int32) indices
 #
-# Each ccall is wrapped in `@klu_lock` so that all libklu activity in the
-# process serializes through `_LIBKLU_LOCK`. This includes finalizer paths
-# (`klu_*_free_*`), which can fire on any thread at any safepoint and would
-# otherwise race against in-flight `solve!` calls on a different cache. See
-# `_LIBKLU_LOCK` in `KLUWrapper.jl` for the empirical evidence (intermittent
-# `KLU_INVALID` return; SEGV at `klu_solve.c:118`).
+# libklu keeps no global state: calls on separate Symbolic/Numeric/Common
+# triples may run concurrently. Calls on one cache must not overlap (solves
+# write the Numeric's workspace); callers serialize those, e.g. `solver_lock`.
 
 import LinearAlgebra
 import SuiteSparse_jll: libklu
@@ -64,7 +61,7 @@ const SymbolicPtr = Ptr{KluLSymbolic}
 const NumericPtr = Ptr{KluLNumeric}
 
 klu_l_defaults!(common::Ref{KluLCommon}) =
-    @klu_lock ccall((:klu_l_defaults, libklu), Cint, (Ptr{KluLCommon},), common)
+    ccall((:klu_l_defaults, libklu), Cint, (Ptr{KluLCommon},), common)
 
 function klu_l_analyze(
     n::Int64,
@@ -72,7 +69,7 @@ function klu_l_analyze(
     ai::Ptr{Int64},
     common::Ref{KluLCommon},
 )
-    return @klu_lock ccall(
+    return ccall(
         (:klu_l_analyze, libklu),
         SymbolicPtr,
         (Int64, Ptr{Int64}, Ptr{Int64}, Ptr{KluLCommon}),
@@ -84,7 +81,7 @@ function klu_l_free_symbolic!(
     symbolic_ref::Ref{SymbolicPtr},
     common::Ref{KluLCommon},
 )
-    return @klu_lock ccall(
+    return ccall(
         (:klu_l_free_symbolic, libklu),
         Cint,
         (Ptr{SymbolicPtr}, Ptr{KluLCommon}),
@@ -99,7 +96,7 @@ function klu_l_factor(
     symbolic::SymbolicPtr,
     common::Ref{KluLCommon},
 )
-    return @klu_lock ccall(
+    return ccall(
         (:klu_l_factor, libklu),
         NumericPtr,
         (Ptr{Int64}, Ptr{Int64}, Ptr{Cdouble}, SymbolicPtr, Ptr{KluLCommon}),
@@ -115,7 +112,7 @@ function klu_l_refactor(
     numeric::NumericPtr,
     common::Ref{KluLCommon},
 )
-    return @klu_lock ccall(
+    return ccall(
         (:klu_l_refactor, libklu),
         Cint,
         (
@@ -138,7 +135,7 @@ function klu_l_solve(
     b::Ptr{Cdouble},
     common::Ref{KluLCommon},
 )
-    return @klu_lock ccall(
+    return ccall(
         (:klu_l_solve, libklu),
         Cint,
         (SymbolicPtr, NumericPtr, Int64, Int64, Ptr{Cdouble}, Ptr{KluLCommon}),
@@ -154,7 +151,7 @@ function klu_l_tsolve(
     b::Ptr{Cdouble},
     common::Ref{KluLCommon},
 )
-    return @klu_lock ccall(
+    return ccall(
         (:klu_l_tsolve, libklu),
         Cint,
         (SymbolicPtr, NumericPtr, Int64, Int64, Ptr{Cdouble}, Ptr{KluLCommon}),
@@ -166,7 +163,7 @@ function klu_l_free_numeric!(
     numeric_ref::Ref{NumericPtr},
     common::Ref{KluLCommon},
 )
-    return @klu_lock ccall(
+    return ccall(
         (:klu_l_free_numeric, libklu),
         Cint,
         (Ptr{NumericPtr}, Ptr{KluLCommon}),
@@ -186,7 +183,7 @@ function klu_l_sort(
     numeric::NumericPtr,
     common::Ref{KluLCommon},
 )
-    return @klu_lock ccall(
+    return ccall(
         (:klu_l_sort, libklu),
         Cint,
         (SymbolicPtr, NumericPtr, Ptr{KluLCommon}),
@@ -205,7 +202,7 @@ function klu_l_condest(
     numeric::NumericPtr,
     common::Ref{KluLCommon},
 )
-    return @klu_lock ccall(
+    return ccall(
         (:klu_l_condest, libklu),
         Cint,
         (Ptr{Int64}, Ptr{Cdouble}, SymbolicPtr, NumericPtr, Ptr{KluLCommon}),
@@ -221,7 +218,7 @@ function klu_l_rcond(
     numeric::NumericPtr,
     common::Ref{KluLCommon},
 )
-    return @klu_lock ccall(
+    return ccall(
         (:klu_l_rcond, libklu),
         Cint,
         (SymbolicPtr, NumericPtr, Ptr{KluLCommon}),
@@ -237,7 +234,7 @@ function klu_zl_factor(
     symbolic::SymbolicPtr,
     common::Ref{KluLCommon},
 )
-    return @klu_lock ccall(
+    return ccall(
         (:klu_zl_factor, libklu),
         NumericPtr,
         (Ptr{Int64}, Ptr{Int64}, Ptr{ComplexF64}, SymbolicPtr, Ptr{KluLCommon}),
@@ -253,7 +250,7 @@ function klu_zl_refactor(
     numeric::NumericPtr,
     common::Ref{KluLCommon},
 )
-    return @klu_lock ccall(
+    return ccall(
         (:klu_zl_refactor, libklu),
         Cint,
         (
@@ -276,7 +273,7 @@ function klu_zl_solve(
     b::Ptr{ComplexF64},
     common::Ref{KluLCommon},
 )
-    return @klu_lock ccall(
+    return ccall(
         (:klu_zl_solve, libklu),
         Cint,
         (SymbolicPtr, NumericPtr, Int64, Int64, Ptr{ComplexF64}, Ptr{KluLCommon}),
@@ -293,7 +290,7 @@ function klu_zl_tsolve(
     conj_solve::Cint,
     common::Ref{KluLCommon},
 )
-    return @klu_lock ccall(
+    return ccall(
         (:klu_zl_tsolve, libklu),
         Cint,
         (
@@ -313,7 +310,7 @@ function klu_zl_free_numeric!(
     numeric_ref::Ref{NumericPtr},
     common::Ref{KluLCommon},
 )
-    return @klu_lock ccall(
+    return ccall(
         (:klu_zl_free_numeric, libklu),
         Cint,
         (Ptr{NumericPtr}, Ptr{KluLCommon}),
@@ -363,7 +360,7 @@ const SymbolicPtr32 = Ptr{KluSymbolic}
 const NumericPtr32 = Ptr{KluNumeric}
 
 klu_defaults!(common::Ref{KluCommon}) =
-    @klu_lock ccall((:klu_defaults, libklu), Cint, (Ptr{KluCommon},), common)
+    ccall((:klu_defaults, libklu), Cint, (Ptr{KluCommon},), common)
 
 function klu_analyze(
     n::Cint,
@@ -371,7 +368,7 @@ function klu_analyze(
     ai::Ptr{Cint},
     common::Ref{KluCommon},
 )
-    return @klu_lock ccall(
+    return ccall(
         (:klu_analyze, libklu),
         SymbolicPtr32,
         (Cint, Ptr{Cint}, Ptr{Cint}, Ptr{KluCommon}),
@@ -383,7 +380,7 @@ function klu_free_symbolic!(
     symbolic_ref::Ref{SymbolicPtr32},
     common::Ref{KluCommon},
 )
-    return @klu_lock ccall(
+    return ccall(
         (:klu_free_symbolic, libklu),
         Cint,
         (Ptr{SymbolicPtr32}, Ptr{KluCommon}),
@@ -398,7 +395,7 @@ function klu_factor(
     symbolic::SymbolicPtr32,
     common::Ref{KluCommon},
 )
-    return @klu_lock ccall(
+    return ccall(
         (:klu_factor, libklu),
         NumericPtr32,
         (Ptr{Cint}, Ptr{Cint}, Ptr{Cdouble}, SymbolicPtr32, Ptr{KluCommon}),
@@ -414,7 +411,7 @@ function klu_refactor(
     numeric::NumericPtr32,
     common::Ref{KluCommon},
 )
-    return @klu_lock ccall(
+    return ccall(
         (:klu_refactor, libklu),
         Cint,
         (
@@ -437,7 +434,7 @@ function klu_solve(
     b::Ptr{Cdouble},
     common::Ref{KluCommon},
 )
-    return @klu_lock ccall(
+    return ccall(
         (:klu_solve, libklu),
         Cint,
         (SymbolicPtr32, NumericPtr32, Cint, Cint, Ptr{Cdouble}, Ptr{KluCommon}),
@@ -453,7 +450,7 @@ function klu_tsolve(
     b::Ptr{Cdouble},
     common::Ref{KluCommon},
 )
-    return @klu_lock ccall(
+    return ccall(
         (:klu_tsolve, libklu),
         Cint,
         (SymbolicPtr32, NumericPtr32, Cint, Cint, Ptr{Cdouble}, Ptr{KluCommon}),
@@ -465,7 +462,7 @@ function klu_free_numeric!(
     numeric_ref::Ref{NumericPtr32},
     common::Ref{KluCommon},
 )
-    return @klu_lock ccall(
+    return ccall(
         (:klu_free_numeric, libklu),
         Cint,
         (Ptr{NumericPtr32}, Ptr{KluCommon}),
@@ -480,7 +477,7 @@ function klu_sort(
     numeric::NumericPtr32,
     common::Ref{KluCommon},
 )
-    return @klu_lock ccall(
+    return ccall(
         (:klu_sort, libklu),
         Cint,
         (SymbolicPtr32, NumericPtr32, Ptr{KluCommon}),
@@ -495,7 +492,7 @@ function klu_condest(
     numeric::NumericPtr32,
     common::Ref{KluCommon},
 )
-    return @klu_lock ccall(
+    return ccall(
         (:klu_condest, libklu),
         Cint,
         (Ptr{Cint}, Ptr{Cdouble}, SymbolicPtr32, NumericPtr32, Ptr{KluCommon}),
@@ -508,7 +505,7 @@ function klu_rcond(
     numeric::NumericPtr32,
     common::Ref{KluCommon},
 )
-    return @klu_lock ccall(
+    return ccall(
         (:klu_rcond, libklu),
         Cint,
         (SymbolicPtr32, NumericPtr32, Ptr{KluCommon}),
@@ -524,7 +521,7 @@ function klu_z_factor(
     symbolic::SymbolicPtr32,
     common::Ref{KluCommon},
 )
-    return @klu_lock ccall(
+    return ccall(
         (:klu_z_factor, libklu),
         NumericPtr32,
         (Ptr{Cint}, Ptr{Cint}, Ptr{ComplexF64}, SymbolicPtr32, Ptr{KluCommon}),
@@ -540,7 +537,7 @@ function klu_z_refactor(
     numeric::NumericPtr32,
     common::Ref{KluCommon},
 )
-    return @klu_lock ccall(
+    return ccall(
         (:klu_z_refactor, libklu),
         Cint,
         (
@@ -563,7 +560,7 @@ function klu_z_solve(
     b::Ptr{ComplexF64},
     common::Ref{KluCommon},
 )
-    return @klu_lock ccall(
+    return ccall(
         (:klu_z_solve, libklu),
         Cint,
         (
@@ -587,7 +584,7 @@ function klu_z_tsolve(
     conj_solve::Cint,
     common::Ref{KluCommon},
 )
-    return @klu_lock ccall(
+    return ccall(
         (:klu_z_tsolve, libklu),
         Cint,
         (
@@ -607,7 +604,7 @@ function klu_z_free_numeric!(
     numeric_ref::Ref{NumericPtr32},
     common::Ref{KluCommon},
 )
-    return @klu_lock ccall(
+    return ccall(
         (:klu_z_free_numeric, libklu),
         Cint,
         (Ptr{NumericPtr32}, Ptr{KluCommon}),
