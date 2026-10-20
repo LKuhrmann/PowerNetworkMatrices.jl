@@ -400,6 +400,20 @@ end
     @test isapprox(X, x_true, atol = 1e-10)
 end
 
+@testset "KLU wrapper: finalizer leaves handles alone once exiting" begin
+    KW = PNM.KLUWrapper
+    cache = PNM.klu_factorize(SparseArrays.sparse(4.0 * LinearAlgebra.I, 3, 3))
+    KW._EXITING[] = true
+    try
+        KW._finalize_klu_cache!(cache)
+        @test PNM.is_factored(cache)
+    finally
+        KW._EXITING[] = false
+    end
+    KW._finalize_klu_cache!(cache)
+    @test !PNM.is_factored(cache)
+end
+
 @testset "KLU wrapper: exit while other threads are solving does not crash" begin
     # Each task solves with its own cache; the main task returns while they are still
     # solving, so Julia runs the exit-time finalizers of caches that are in use.
