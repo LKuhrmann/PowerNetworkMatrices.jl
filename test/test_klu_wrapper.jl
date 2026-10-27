@@ -458,3 +458,22 @@ end
     @test occursin("main returning", out_s)
     @test !occursin("error in running finalizer", err_s)
 end
+
+@testset "KLU wrapper: finalizer does not block on a busy libklu lock" begin
+    # A finalizer can run while the current task is queued on `_LIBKLU_LOCK`;
+    # blocking there fails ("val already in a list") and can hang the process.
+    KW = PNM.KLUWrapper
+    cache = PNM.klu_factorize(SparseArrays.sparse(4.0 * LinearAlgebra.I, 3, 3))
+
+    release = Base.Event()
+    holder = @async @lock KW._LIBKLU_LOCK wait(release)  # another task holds the lock
+    yield()
+    @test islocked(KW._LIBKLU_LOCK)
+    # The finalizer must free at once; in a task so blocking fails, not hangs.
+    fin = @async KW._free_klu_handles!(cache)
+    @test timedwait(() -> istaskdone(fin), 5.0) === :ok
+    @test !PNM.is_factored(cache)
+    notify(release)
+    wait(holder)
+    wait(fin)
+end
